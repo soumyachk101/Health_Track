@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EFF6FF"/>
+      <stop offset="1" stop-color="#dbe9f9"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#00bfa5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- subtle dots texture -->
+  <g fill="#cbd5e1" opacity="0.35">
+    <circle cx="100" cy="100" r="3"/><circle cx="220" cy="100" r="3"/><circle cx="340" cy="100" r="3"/><circle cx="460" cy="100" r="3"/>
+    <circle cx="100" cy="530" r="3"/><circle cx="220" cy="530" r="3"/><circle cx="340" cy="530" r="3"/>
+  </g>
+
+  <!-- brand mark (shield + cross, matching logo.svg) -->
+  <g transform="translate(140,150)">
+    <circle r="95" fill="url(#accent)" opacity="0.12"/>
+    <g transform="scale(5.6) translate(-12,-12)" fill="none" stroke="#00bfa5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      <path d="M12 8v8"/>
+      <path d="M8 12h8"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <text x="290" y="235" font-family="Arial, Helvetica, sans-serif" font-size="96" font-weight="900" fill="#1e293b" letter-spacing="-2">
+    HealthTrack<tspan fill="#0d9488">+</tspan>
+  </text>
+
+  <!-- tagline -->
+  <text x="140" y="360" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="600" fill="#475569">
+    Design Your Health Future
+  </text>
+  <text x="140" y="425" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="500" fill="#64748b">
+    Tactile health management for patients, doctors &amp; providers
+  </text>
+
+  <!-- feature pills -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">
+    <g transform="translate(140,480)">
+      <rect width="210" height="56" rx="28" fill="#ffffff" stroke="#e2e8f0"/>
+      <circle cx="34" cy="28" r="10" fill="#00bfa5"/>
+      <text x="58" y="36" fill="#334155">Live Vitals</text>
+    </g>
+    <g transform="translate(380,480)">
+      <rect width="280" height="56" rx="28" fill="#ffffff" stroke="#e2e8f0"/>
+      <circle cx="34" cy="28" r="10" fill="#3b82f6"/>
+      <text x="58" y="36" fill="#334155">Smart Medication</text>
+    </g>
+    <g transform="translate(690,480)">
+      <rect width="300" height="56" rx="28" fill="#ffffff" stroke="#e2e8f0"/>
+      <circle cx="34" cy="28" r="10" fill="#8b5cf6"/>
+      <text x="58" y="36" fill="#334155">Neuro &amp; Mind Insights</text>
+    </g>
+  </g>
+
+  <!-- domain -->
+  <text x="140" y="585" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="500" fill="#94a3b8">
+    healthtrack.store
+  </text>
+</svg>

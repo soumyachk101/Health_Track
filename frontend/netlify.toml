@@ -1,0 +1,21 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[dev]
+  command = "npm run dev"
+  port = 3000
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Security headers (kept in parity with vercel.json).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), geolocation=(), payment=(), usb=()"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains"
+    Content-Security-Policy = """default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://accounts.google.com https://apis.google.com https://*.healthtrack.store https://healthtrack.store https://*.vercel.app http://127.0.0.1:8000; frame-src 'self' https://accounts.google.com https://www.google.com; base-uri 'self'; object-src 'none'"""

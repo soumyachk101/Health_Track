@@ -1,0 +1,20 @@
+# robots.txt for HealthTrack+
+# Note: this file is a crawling guideline, NOT access control. Private
+# routes are protected by authentication on the application layer.
+
+User-agent: *
+# Public, indexable pages
+Allow: /
+Disallow: /dashboard/
+Disallow: /admin
+Disallow: /admin-panel/
+Disallow: /doctor/
+Disallow: /provider/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /uploads/
+
+Sitemap: https://healthtrack.store/sitemap.xml
