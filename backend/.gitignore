@@ -1,0 +1,12 @@
+node_modules/
+.env
+data/
+*.sqlite3
+main
+.DS_Store
+
+# Ignore uploaded file contents, keep the directory placeholders
+uploads/prescriptions/*
+uploads/insurance/*
+!uploads/prescriptions/.gitkeep
+!uploads/insurance/.gitkeep

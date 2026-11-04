@@ -50,9 +50,6 @@ next-env.d.ts
 .vscode/
 /server/
 
-# separate server repo (HealthTrack-Server)
-/backend/
-
 # frontend build artifacts
 frontend/.next/
 frontend/.vercel/
