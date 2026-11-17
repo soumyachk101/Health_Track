@@ -1,415 +1,415 @@
-# HealthTrack+ এবং একই ধরনের প্ল্যাটফর্ম
+# HealthTrack+ and similar platforms
 
-তারিখ: ১৭ নভেম্বর ২০২৬। তথ্যগুলো ১৫ নভেম্বর ২০২৬-এ অফিসিয়াল পেজ, স্টোর লিস্টিং, আর এই রিপোর কোড থেকে নেওয়া। দাম যেখানে পেজগুলো নিজেরাই মেলে না, সেখানে দুটো সংখ্যাই রাখা আছে। যে সংখ্যা প্রাইমারি পেজে ছিল না, সেটা এখানে নেই।
+Date: 17 November 2026. Figures come from official pages and store listings checked on 15 November 2026, plus this repo. Where two official pages disagree, both numbers are kept. A number that was not on a primary page is omitted.
 
-২৮টা লেন শেষ হয়েছে। Cult.fit, Ultrahuman, Strava, আর ওপেন পার্সোনাল হেলথ রেকর্ড (Fasten / Tidepool) এই চারটার পূর্ণ ব্রিফ ফেরেনি। Fasten আর Tidepool সম্পর্কে শুধু সেই অংশ আছে, যা সোর্স ফাইল থেকে সরাসরি পড়া গেছে।
+Twenty-eight research lanes finished. Cult.fit, Ultrahuman, Strava, and the open personal-health-record lane (Fasten / Tidepool) did not return a full brief. Fasten and Tidepool appear only to the extent their source files were read directly.
 
-এই ফাইলে অ্যাপের কোড বদলানো হয়নি।
-
----
-
-## সংক্ষেপে
-
-HealthTrack+ একটা রোগীর নিজের খাতা: রক্তচাপ, সুগার, ওজন, ওষুধ, প্রেসক্রিপশন, মুড, লাইফস্টাইল, ইন্স্যুরেন্স, ডাক্তারের অ্যাপয়েন্টমেন্ট, আর প্রোভাইডারের সার্ভিস রিকোয়েস্ট এক অ্যাকাউন্টে। এই সেটের কোনো একটা প্ল্যাটফর্ম একা এই পুরো তালিকাটা ভারতের জন্য দেয় না।
-
-যারা সামনে, তারা তিন রকম:
-
-- ঘড়ি বা রিং দিয়ে ঘুম, হার্ট রেট, আর অক্সিজেন নিজে থেকে নেয়। Apple Health, Samsung Health, Google Health (আগের Fitbit), Garmin, WHOOP, Oura, Withings।
-- ভারতে ওষুধ, ল্যাব, আর ডাক্তার বুক করে দেয়। Practo, Tata 1mg, Apollo 24|7, PharmEasy, MediBuddy।
-- ভারতের আসল হেলথ রেকর্ডের রেল ABDM। eka.care সেই রেলে আছে। Samsung-এর ভারতীয় রেকর্ডও Eka-র মাধ্যমে ABHA খোলে।
-
-HealthTrack+ যেখানে এখনই পিছিয়ে, সেটা সেন্সর বা মার্কেটপ্লেস না। নিজের খাতার ভিতরের কাজ আধা। লাইফস্টাইল, মেন্টাল হেলথ, আর ইন্স্যুরেন্সের “যোগ করুন” বোতাম `Feature coming soon` অ্যালার্ট দেয়। ওষুধের ফ্রিকোয়েন্সি `once` / `twice` / `thrice`। ঘড়ির সময়, অ্যালার্ম, বা খাওয়া-হয়েছে লগ নেই। চ্যাটবট অথেন্টিকেশন ছাড়া, আর সেটা ডায়াগনোসিস দেওয়ার মতো করে বানানো যাবে না।
-
-জেতার জায়গাটা এই: যেকোনো ফার্মেসি, যেকোনো হাসপাতাল, যেকোনো ইন্স্যুরারের তথ্য এক পরিবারের টাইমলাইনে থাকবে, ঘড়ি বা একটা শপের কার্ট ছাড়া। ABDM-কমপ্লায়েন্ট, সার্টিফায়েড পিএইচআর, বা হেলথ লকার বলা যাবে না, যতক্ষণ সার্ভারে P1–P3 ইন্টিগ্রেশন আর ডিরেক্টরি লিস্টিং না হয়।
+No application code was changed for this file.
 
 ---
 
-## HealthTrack+ এখন কী রাখে
+## Short version
 
-ব্যাকএন্ড Go। রোগী, ডাক্তার, প্রোভাইডার, অ্যাডমিন। অথ: ইমেইল ওটিপি, গুগল লগইন, পাসওয়ার্ড রিসেট। চ্যাটবট `POST /chatbot/api` আর টিটিএস আলাদা, লগইন লাগে না।
+HealthTrack+ is a patient’s own notebook: blood pressure, blood sugar, weight, medicines, prescriptions, mood, lifestyle, insurance, doctor appointments, and provider service requests in one account. No single platform in this set covers that whole list for India.
 
-| মডিউল | ডেটাবেসে যা আছে | স্ক্রিনে যা হয় |
+The products that are ahead fall into three groups:
+
+- Watches and rings that collect sleep, heart rate, and oxygen on their own. Apple Health, Samsung Health, Google Health (formerly Fitbit), Garmin, WHOOP, Oura, Withings.
+- India marketplaces that book medicines, labs, and doctors. Practo, Tata 1mg, Apollo 24|7, PharmEasy, MediBuddy.
+- ABDM, the national health-record rail. eka.care is on that rail. Samsung’s India records also open an ABHA through Eka.
+
+The current gap is inside the notebook. Lifestyle, mental health, and insurance “add” buttons fire a `Feature coming soon` alert. Medicine frequency is `once` / `twice` / `thrice`. There is no clock time, alarm, or taken log. The chatbot has no authentication, and it must stay a general assistant.
+
+The opening is a household timeline that can hold any pharmacy, any hospital, and any insurer, without a watch and without a shop cart. The product can call itself ABDM-compliant, a certified PHR, or a health locker only after a server-side P1–P3 integration and a directory listing.
+
+---
+
+## What HealthTrack+ stores today
+
+Backend is Go. Roles are patient, doctor, provider, and admin. Auth is email OTP, Google login, and password reset. The chatbot `POST /chatbot/api` and TTS are separate and do not require login.
+
+| Module | In the database | On the screen |
 | --- | --- | --- |
-| ভাইটাল | সিস্টোলিক, ডায়াস্টোলিক, ব্লাড সুগার, ওজন, হার্ট রেট, তাপমাত্রা, অক্সিজেন, নোট | হেলথ ট্র্যাকে যোগ করা যায় |
-| ওষুধ | নাম, ডোজ, ফ্রিকোয়েন্সি, শুরু, শেষ, কে লিখেছেন, নোট, অ্যাকটিভ | যোগ করা যায়। সময় বা রিমাইন্ডার নেই |
-| প্রেসক্রিপশন | ডাক্তার, হাসপাতাল, ডায়াগনোসিস, তারিখ, ফলোআপ, ডকুমেন্ট, নোট | যোগ করা যায় |
-| মেন্টাল হেলথ | মুড, স্ট্রেস, ঘুমের ঘণ্টা, ঘুমের মান, অ্যাংজাইটি, নোট | লিস্ট আছে। যোগ বোতাম “coming soon” |
-| লাইফস্টাইল | পানি, ব্যায়ামের মিনিট, স্টেপ, ক্যালরি খাওয়া, ক্যালরি খরচ, স্মোকিং, অ্যালকোহল, নোট | লিস্ট আছে। Log Activity “coming soon” |
-| ইন্স্যুরেন্স | টাইপ, প্রোভাইডার, পলিসি নম্বর, কভারেজ, প্রিমিয়াম, শুরু, শেষ, ডকুমেন্ট, অ্যাকটিভ | লিস্ট আছে। Add Policy “coming soon”। “Expiring Soon” কার্ডে `--` |
-| অ্যাপয়েন্টমেন্ট | রোগী, ডাক্তার, তারিখ, সময়, কারণ, স্ট্যাটাস, টাইপ, মিটিং লিঙ্ক | ডাক্তার অ্যাকসেপ্ট, রিজেক্ট, কমপ্লিট করতে পারেন |
-| সার্ভিস | প্রোভাইডারের সার্ভিস, দাম, রোগীর রিকোয়েস্ট | অ্যাকসেপ্ট, ডিক্লাইন, কমপ্লিট |
-| অ্যাডমিন | ইউজার, অ্যাপ্রুভ | হেলথ ডেটা, রিপোর্ট, সেটিংস স্ক্রিনে “backend support coming soon” |
+| Vitals | Systolic, diastolic, blood sugar, weight, heart rate, temperature, oxygen, notes | Can be added on Health Track |
+| Medicines | Name, dosage, frequency, start, end, prescribed by, notes, active | Can be added. No clock time or reminder |
+| Prescriptions | Doctor, hospital, diagnosis, date, follow-up, document, notes | Can be added |
+| Mental health | Mood, stress, sleep hours, sleep quality, anxiety, notes | List exists. Add button says “coming soon” |
+| Lifestyle | Water, exercise minutes, steps, calories in, calories burned, smoking, alcohol, notes | List exists. Log Activity says “coming soon” |
+| Insurance | Type, provider, policy number, coverage, premium, start, end, document, active | List exists. Add Policy says “coming soon”. “Expiring Soon” card shows `--` |
+| Appointments | Patient, doctor, date, time, reason, status, type, meeting link | Doctor can accept, reject, or complete |
+| Services | Provider service, price, patient request | Accept, decline, or complete |
+| Admin | Users, approval | Health data, reports, and settings say “backend support coming soon” |
 
-দৈনিক রক্তচাপ, মুড, আর পলিসির সারি ABDM-এর কেয়ার কনটেক্সট না। সেগুলো এই অ্যাপের নিজের লগ।
+Daily blood pressure, mood, and policy rows are this app’s own log. They are separate from an ABDM care context.
 
 ---
 
-## এক নজরে
+## At a glance
 
-দাম ১৫ নভেম্বর ২০২৬-এর পেজ। ভারতের দাম শুধু সেখানেই, যেখানে ইন্ডিয়া লিস্টিং বা অফিসিয়াল ইন্ডিয়া পেজ সংখ্যাটা ছাপে।
+Prices are from pages checked on 15 November 2026. India prices appear only where an India listing or an official India page printed the figure.
 
-| প্ল্যাটফর্ম | কী | ভারত | যে দাম পেজে ছিল | HealthTrack-এর কাছে কী বেশি |
+| Platform | What it is | India | Price on the page | What it has beyond HealthTrack |
 | --- | --- | --- | --- | --- |
-| Apple Health | ফোনের রেকর্ড | অ্যাপ আছে। বেশ কিছু ক্লিনিকাল ফিচার যুক্তরাষ্ট্র | হেলথ অ্যাপের আলাদা দাম পাওয়া যায়নি | ঘড়ি, ওষুধের রিমাইন্ডার, পিডিএফ |
-| Health Connect | অ্যান্ড্রয়েডের ডিভাইস-ডেটা | প্লেতে আছে | দামের পেজ নেই | স্টেপ, সুগার, রক্তচাপ অন্য অ্যাপ থেকে |
-| Samsung Health | ঘড়ি + অ্যাপ | আছে, ABHA আছে | অ্যাপ ফ্রি। সাবস্ক্রিপশনের দাম যাচাই হয়নি | সেন্সর, ওষুধের ইন্টারঅ্যাকশন, হাসপাতালের রেকর্ড |
-| Google Health (Fitbit) | ঘড়ি-প্রথম | প্রিমিয়াম ₹৪৯৯/মাস বা ₹৪,৯৯৯/বছর (৭ মে ২০২৬-এর ইন্ডিয়া পোস্ট) | যুক্তরাষ্ট্রে $৯.৯৯/মাস বা $৯৯/বছর | ঘুমের স্টেজ, Gemini কোচ |
-| Garmin Connect | ঘড়ির লগ | অ্যাপ আছে। Connect+ ইন্ডিয়া দাম নেই | যুক্তরাষ্ট্র Connect+ $৬.৯৯/মাস বা $৬৯.৯৯/বছর। অ্যাপ ফ্রি | স্টেপ, পালস অক্স, কোচ প্ল্যান |
-| WHOOP | ব্যান্ড, মেম্বারশিপ | One ₹২১,৯৯০, Peak ₹২৮,৯৯০, ১২ মাসসহ। Life ভারতে নেই | যুক্তরাষ্ট্র One $১৯৯, Peak $২৩৯, Life $৩৫৯ প্রতি বছর | রিকভারি, স্ট্রেইন, জার্নাল |
-| Oura | আংটি | Amazon আর Croma। সদস্যতা UPI | যুক্তরাষ্ট্র রিং $৩৪৯–$৪৯৯, সদস্যতা $৫.৯৯/মাস বা $৬৯.৯৯/বছর। ভারতের সদস্যতা অফিসিয়াল কার্ডে নেই | ঘুম, রেডিনেস, সাইকেল |
-| Withings | স্কেল, কাফ, ঘড়ি | হার্ডওয়্যার টাকায়। ScanWatch 2-এর ECG/SpO2 অঞ্চল তালিকায় ভারত নেই | Withings+ যুক্তরাষ্ট্র $৯.৯৫/মাস বা $৯৯.৫০/বছর। এক ইন্ডিয়া পেজে ₹১,০০০/মাস বা ₹৯,৫০০/বছর | কাফের রক্তচাপ, সিএসভি |
-| MacroFactor | ডায়েট কোচ | অ্যাপে ₹১,০৪৯/মাস। বার্ষিক ভারতীয় দাম যাচাই হয়নি | যুক্তরাষ্ট্র $১১.৯৯/মাস, $৪৭.৯৯/৬ মাস, $৭১.৯৯/বছর | সাপ্তাহিক ক্যালরি টার্গেট |
-| MyFitnessPal | ফুড ডায়েরি | অ্যাপ আছে। কোচ ভারতে নেই | প্রিমিয়াম $৭৯.৯৯/বছর। প্রিমিয়াম+ $৯৯.৯৯/বছর বা $২৪.৯৯/মাস | বারকোড, ২০.৫ মিলিয়ন খাবারের দাবি |
-| Cronometer | নিউট্রিয়েন্ট ডায়েরি | Gold ₹৯৯৯/মাস, ₹৫,৯০০/বছর | বেসিক $০। Gold $১০.৯৯/মাস বা $৫৯.৯৯/বছর | ৯৫ নিউট্রিয়েন্ট, যাচাই করা ডেটাবেস |
-| Noom | অভ্যাস কোর্স | অ্যাপ আছে। ক্লিনিক যুক্তরাষ্ট্র | ওয়েট $৭০/১ মাস থেকে $২০৯/১২ মাস | দৈনিক পাঠ |
-| HealthifyMe | ভারতীয় ক্যালরি | এখানকার প্রোডাক্ট | পেজে পেজে আলাদা। Healthify+ স্টোরে ₹৩৯৯/১ মাস, ₹১,৪৯৯/১২ মাস। Rx ₹৯,৯৯৯ থেকে | ভারতীয় খাবার, Ria |
-| Bearable | লক্ষণ ও মুড | অ্যাপ, ইংরেজি | FAQ-তে $৩৪.৯৯। ভারতে লাইফটাইম ₹৯,৯০০ | কোরিলেশন, এক্সপেরিমেন্ট |
-| Levels | সিজিএম, যুক্তরাষ্ট্র | নেই | সদস্যতা $১৫/মাস বা $৮০/বছর | খাবারের পাশে গ্লুকোজ কার্ভ |
-| Function Health | ল্যাব মেম্বারশিপ | নেই | $৩৬৫/বছর। পরিবার $৩৪০ | ১৬০+ বায়োমার্কার, ক্লিনিশিয়ান নোট |
-| Medisafe | ওষুধের অ্যালার্ম | ১৪ দিন পর লক, তারপর পেইড | $৪.৯৯/মাস বা $৩৯.৯৯/বছর। ভারত স্টোরে মাস ₹২৯৯ ও ₹৪৯৯, বছর ₹২,৪৯৯–₹৩,৯৯৯ | সময়, রিফিল, Medfriend |
-| Ada | লক্ষণ চেক | অ্যাপ ফ্রি। হিন্দি নেই | কনজিউমার দাম নেই, ফ্রি | সম্ভাব্য কারণের রিপোর্ট। কপি করা যাবে না |
-| MyChart | হাসপাতাল পোর্টাল | ভারতের হাসপাতাল পাওয়া যায়নি | রোগীর সাবস্ক্রিপশন নেই | ল্যাব, ই-চেকইন, প্রক্সি |
-| Teladoc | যুক্তরাষ্ট্র ভার্চুয়াল কেয়ার | কনজিউমার প্রোডাক্ট না | FAQ-তে ২৪/৭ কেয়ার $৮৯। থেরাপি পেজে $৯৫। দুই পেজ মেলে না | দাম আগে দেখানো, ভিজিট নোট |
-| Practo | ডাক্তার ও ক্লিনিক | এখানকার | অডিও ₹১৯৯ থেকে। Plus ₹১,১৯৯/৩০ দিন | ডিরেক্টরি, প্রেসক্রিপশন, Ray |
-| eka.care | পিএইচআর + ইএমআর | এখানকার, ABHA | রোগী ফ্রি। Eka Pass ₹৪৯/মাস, ₹৪৪৯/বছর। ডাক্তার Plus ₹১৬,৯৯৯/বছর | ABHA, Gmail, স্ক্রাইব |
-| Tata 1mg | ফার্মেসি, ল্যাব | এখানকার | উদাহরণ: Maglectin ₹২৪৯। Gold প্যাকেজ ₹২,৪৯৯ | ডেলিভারি, রিপোর্ট |
-| Apollo 24\|7 | হাসপাতালের দোকান | এখানকার | কনসাল্ট ₹২০০ থেকে। Circle ব্লগে ₹১৯৯/১২ মাস (১২ মে ২০২৫) | নিজের হাসপাতালের রেকর্ড |
-| PharmEasy | ফার্মেসি, ল্যাব | এখানকার | কনসাল্ট ₹২৪৯ থেকে। Plus-এর এক দাম নেই | প্রেসক্রিপশন থেকে অর্ডার |
-| MediBuddy | ওপিডি ওয়ালেট | এখানকার | ব্রাউজ ফ্রি। কনসাল্ট পে-পার-ইউজ | ক্যাশলেস লেবেল, ABHA |
-| ABDM | সরকারি রেল | এটাই রেল | নাগরিকের কাছে আলাদা অ্যাপ-দাম না | লিংকড হাসপাতাল রেকর্ড |
+| Apple Health | Phone record | App exists. Several clinical features are US-only | No separate Health app price found | Watch, medicine reminders, PDF |
+| Health Connect | On-device Android store | On Play | No price page | Steps, sugar, blood pressure from other apps |
+| Samsung Health | Watch plus app | Yes, with ABHA | App is free. Subscription price not verified | Sensors, medicine interactions, hospital records |
+| Google Health (Fitbit) | Watch-first | Premium ₹499/month or ₹4,999/year (India post, 7 May 2026) | US $9.99/month or $99/year | Sleep stages, Gemini coach |
+| Garmin Connect | Watch log | App exists. No India Connect+ price | US Connect+ $6.99/month or $69.99/year. App is free | Steps, Pulse Ox, coach plans |
+| WHOOP | Band membership | One ₹21,990, Peak ₹28,990, 12 months included. Life is not sold in India | US One $199, Peak $239, Life $359 per year | Recovery, strain, journal |
+| Oura | Ring | Amazon and Croma. Membership via UPI | US ring $349–$499, membership $5.99/month or $69.99/year. No official India membership price | Sleep, readiness, cycle |
+| Withings | Scale, cuff, watch | Hardware in INR. India is absent from the ScanWatch 2 ECG/SpO2 region list | Withings+ US $9.95/month or $99.50/year. One India page: ₹1,000/month or ₹9,500/year | Cuff blood pressure, CSV |
+| MacroFactor | Diet coach | App shows ₹1,049/month. India annual price not verified | US $11.99/month, $47.99/6 months, $71.99/year | Weekly calorie target |
+| MyFitnessPal | Food diary | App exists. Coach is not offered in India | Premium $79.99/year. Premium+ $99.99/year or $24.99/month | Barcode, claim of 20.5 million foods |
+| Cronometer | Nutrient diary | Gold ₹999/month, ₹5,900/year | Basic $0. Gold $10.99/month or $59.99/year | 95 nutrients, verified database |
+| Noom | Habit course | App exists. Clinic is US-only | Weight $70/1 month through $209/12 months | Daily lessons |
+| HealthifyMe | Indian calories | Built here | Pages disagree. Healthify+ store ₹399/1 month, ₹1,499/12 months. Rx from ₹9,999 | Indian foods, Ria |
+| Bearable | Symptoms and mood | App, English only | FAQ says $34.99. India lifetime ₹9,900 | Correlations, experiments |
+| Levels | US CGM wellness | Not available | Membership $15/month or $80/year | Glucose curve next to a meal |
+| Function Health | Lab membership | Not available | $365/year. Family $340 | 160+ biomarkers, clinician notes |
+| Medisafe | Dose alarms | Locks after 14 days, then paid | $4.99/month or $39.99/year. India store monthly ₹299 and ₹499, yearly ₹2,499–₹3,999 | Clock time, refill, Medfriend |
+| Ada | Symptom check | App is free. No Hindi | No consumer price. Free | Probability report. Leave it out of HealthTrack |
+| MyChart | Hospital portal | No Indian hospital found on a primary source | No patient subscription | Labs, eCheck-In, proxy |
+| Teladoc | US virtual care | Not an India consumer doctor service | Billing FAQ: 24/7 care $89. Therapy page: $95. The two pages disagree | Price before confirm, visit note |
+| Practo | Doctors and clinics | Built here | Audio from ₹199. Plus ₹1,199/30 days | Directory, prescriptions, Ray |
+| eka.care | PHR plus EMR | Built here, with ABHA | Patient app free. Eka Pass ₹49/month, ₹449/year. Doctor Plus ₹16,999/year | ABHA, Gmail, scribe |
+| Tata 1mg | Pharmacy and labs | Built here | Example: Maglectin ₹249. Gold package ₹2,499 | Delivery, reports |
+| Apollo 24\|7 | Hospital storefront | Built here | Consults from ₹200. Circle blog ₹199/12 months (12 May 2025) | Records from Apollo hospitals |
+| PharmEasy | Pharmacy and labs | Built here | Consults from ₹249. No single Plus price | Order from a prescription |
+| MediBuddy | OPD wallet | Built here | Browse free. Consults are pay-per-use | Cashless label, ABHA |
+| ABDM | Public rail | This is the rail | No separate citizen app price | Linked hospital records |
 
 ---
 
-## ফোনের হেলথ লেয়ার
+## Phone health layer
 
 ### Apple Health
 
-Apple-এর হেলথ অ্যাপ iPhone, iPad, আর Watch-এ। অ্যান্ড্রয়েড বা ওয়েব অ্যাপ পাওয়া যায়নি। ভারতের সাইট আছে। ৩ নভেম্বর ২০২৬-এর ভাষা তালিকায় হিন্দি নেই।
+Apple’s Health app runs on iPhone, iPad, and Watch. No Android or web app was found. An India site exists. Hindi is absent from the 3 November 2026 language list.
 
-রক্তচাপ লগ আছে: সকাল-সন্ধ্যার ৭ দিন, বা ২৮টা দৈনিক রিডিং, রিমাইন্ডার, পিডিএফ। শ্রেণি AHA, ESC, বা FIGO। সুগার HealthKit-এ হাতে লেখা যায়। হার্ট রেট, ECG (২২ বছরের বেশি, নির্দিষ্ট ঘড়ি), Blood Oxygen ওয়েলনেস হিসেবে। ওষুধের তালিকা, সময়, ৩০ মিনিট পর ফলোআপ, খাওয়া বা স্কিপ, পিডিএফ। ক্যামেরায় লেবেল স্ক্যান আর ড্রাগ ইন্টারঅ্যাকশন যুক্তরাষ্ট্র। ভারতে নাম টাইপ করতে হয়।
+Blood pressure logging covers 7 days of morning and evening readings, or 28 daily readings, plus reminders and a PDF. Classifications shown are AHA, ESC, or FIGO. Blood sugar can be typed into HealthKit. Heart rate, ECG (age 22 or older, on specific watches), and Blood Oxygen are wellness measurements. Medicines have a list, a schedule, a follow-up 30 minutes later, taken or skipped, and a PDF. Camera label scan and drug-interaction checks are documented as United States only. In India the name is typed.
 
-হাইপারটেনশন নোটিফিকেশন নিয়ে পেজের মধ্যে গরমিল: ইন্ডিয়া সাপোর্ট (২৬ সেপ্টেম্বর ২০২৬) ফিচারটাকে অ্যাভেইলেবল বলে, ইন্ডিয়া হেলথ পেজে সেই সেকশন ছিল না। Series 12 আর Ultra 4-এর ক্লিয়ারেন্স সেই সাপোর্ট আর্টিকেলে তখনো প্রসেসে।
+Hypertension notifications disagree across Apple’s own pages. India support (26 September 2026) calls the feature available. The India Health page fetched the same day did not show that section. That support article also said Series 12 and Ultra 4 clearance was still in process.
 
-কপি করার মতো: ওষুধের পিডিএফ, কাফের লগের রিমাইন্ডার, শেয়ার। এড়ানোর মতো: ঘড়ি ছাড়া অ্যাপ বানানো যাবে না এমন করে তোলা, আর যুক্তরাষ্ট্রের ইন্টারঅ্যাকশন চেকার ভারতীয় ফ্রি টেক্সটে চালানো।
+Worth copying: a medicine PDF, cuff-log reminders, and sharing. Leave out a design that only works with a watch, and leave the US interaction checker off free-text Indian medicine names.
 
-সোর্স: [apple.com/in/health](https://www.apple.com/in/health/), [Blood Oxygen](https://support.apple.com/en-in/120358), HealthKit ডক।
+Sources: [apple.com/in/health](https://www.apple.com/in/health/), [Blood Oxygen](https://support.apple.com/en-in/120358), HealthKit docs.
 
 ### Google Health Connect
 
-এটা ওয়েব পিএইচআর না। অ্যান্ড্রয়েড ১৪-এ সেটিংসের ভিতরে। ফোনের ভিতরে থাকে। iOS বা ব্রাউজার ক্লায়েন্ট নেই। মেডিকেল রেকর্ড এক্সপোর্ট হয় না। Google Fit API ২০২৬-এর শেষ পর্যন্ত, নতুন সাইন-আপ ১ মে ২০২৪ থেকে বন্ধ।
+This is an on-device Android database, included in Settings on Android 14. There is no iOS or browser client. Medical records cannot be exported. Google Fit APIs run until the end of 2026. New developer sign-ups have been closed since 1 May 2024.
 
-যা পড়ে: রক্তচাপ, গ্লুকোজ, হার্ট রেট, অক্সিজেন, তাপমাত্রা, ওজন, পানি, ক্যালরি, FHIR ওষুধ। প্লে পলিসি এই ডেটা দিয়ে ইন্স্যুরেন্স এলিজিবিলিটি নির্ধারণ বারণ করে।
+It can hold blood pressure, glucose, heart rate, oxygen, temperature, weight, hydration, calories, and FHIR medications. Play policy forbids using this data to decide insurance eligibility.
 
-HealthTrack পরে চাইলে একটা পাইপ রাখতে পারে: হাতের এন্ট্রি আগে, তারপর Health Connect। ঘড়ি না থাকলেও খাতা চলবে।
+A later HealthTrack pipe can read it with a fixed order: a manual entry first, then Health Connect. The notebook still works for someone without a watch.
 
-সোর্স: [Health Connect](https://developer.android.com/health-and-fitness/health-connect), [Fit মাইগ্রেশন](https://developer.android.com/health-and-fitness/health-connect/migration/fit)।
+Sources: [Health Connect](https://developer.android.com/health-and-fitness/health-connect), [Fit migration](https://developer.android.com/health-and-fitness/health-connect/migration/fit).
 
 ### Samsung Health
 
-ভারতে ফ্রি। Galaxy Watch4-এর পরের ঘড়িতে, Galaxy ফোনের সাথে, রক্তচাপ (২৮ দিনে একবার ক্যালিব্রেট) আর ECG। নিজেরাই বলে ডায়াগনোসিসের জন্য না, ডায়াবেটিসে ব্লাড প্রেশার অ্যাপ চালাবেন না। সুগারের ভারতীয় পেজ পাওয়া যায়নি।
+Free in India. Blood pressure (recalibrate every 28 days) and ECG run on Galaxy Watch4 and later, paired with a Galaxy phone. Samsung says the blood-pressure app is not for diagnosis and should not be used by people with diabetes. No India page describing blood sugar was found.
 
-ওষুধের তালিকা, রিমাইন্ডার, ইন্টারঅ্যাকশন। প্রেসক্রিপশন স্ক্যান করে তালিকায় ঢোকে। ১৭ জানুয়ারি ২০২৫-এর Samsung Newsroom: অ্যাপের ভিতর ABHA, Aadhaar বা মোবাইল দিয়ে, Eka Care-এর মাধ্যমে। ১৯ ফেব্রুয়ারি ২০২৬: Find Care, PharmEasy আর Tata 1mg-এর সাথে। PharmEasy Plus-এর ছয় মাসের অফার। সেই প্লাসের আসল দাম যাচাই হয়নি।
+The app has a medication list, reminders, and interaction warnings. A scanned prescription or pill packet lands in that list. Samsung Newsroom India, 17 January 2025: create or open an ABHA in the app with Aadhaar or a mobile number, via Eka Care. 19 February 2026: Find Care with PharmEasy and Tata 1mg, including six complimentary months of PharmEasy Plus. The paid price of that Plus plan was not verified.
 
-সোর্স: [Samsung India](https://www.samsung.com/in/apps/samsung-health/), [ABHA নিউজরুম](https://news.samsung.com/in/samsung-introduces-personal-health-records-feature-on-samsung-health-app-in-india)।
+Sources: [Samsung India](https://www.samsung.com/in/apps/samsung-health/), [ABHA newsroom](https://news.samsung.com/in/samsung-introduces-personal-health-records-feature-on-samsung-health-app-in-india).
 
-### Google Health, আগের Fitbit
+### Google Health, formerly Fitbit
 
-১৯ মে ২০২৬ থেকে Fitbit অ্যাপের নাম Google Health। Fitbit অ্যাকাউন্ট বন্ধ। প্রিমিয়াম এখন Google Health Premium। কোচ, ঘুমের স্টেজ, ফিটনেস ট্যাব এখনো Fitbit বা Pixel Watch চায়। ঘড়ি ছাড়া Today আর Health।
+On 19 May 2026 the Fitbit app became the Google Health app. Fitbit accounts ended. Premium is now Google Health Premium. The coach, sleep stages, and Fitness tab still require a paired Fitbit or Pixel Watch. Without one, the app shows Today and Health.
 
-ভারত, Google-এর ৭ মে ২০২৬ পোস্ট: ₹৪৯৯/মাস বা ₹৪,৯৯৯/বছর। Fitbit Air ২ অক্টোবর ২০২৬, ₹১৩,৯৯৯। যুক্তরাষ্ট্রের হেল্প আর্টিকেল বলে সেটা ভারতে প্রযোজ্য না, তাই ভারতের দাম ইন্ডিয়া পোস্ট থেকে।
+India, Google post of 7 May 2026: ₹499 per month or ₹4,999 per year. Fitbit Air reached Indian shelves on 2 October 2026 at ₹13,999. The US help article says it does not apply to India, so the India price is the India post.
 
-ওষুধ একটা ডোজ ক্যাবিনেট না। যুক্তরাষ্ট্রের প্রোভাইডার কানেকশন বা Health Connect। গ্লুকোজ হাতে লেখা যায়। রক্তচাপ তাদের ম্যানুয়াল মেট্রিক তালিকায় নেই।
+Medications arrive through a US provider connection or Health Connect. Glucose can be typed. Blood pressure is absent from the manual metric list.
 
-সোর্স: [ইন্ডিয়া কোচ পোস্ট](https://blog.google/intl/en-in/products/hardware/google-health-coach-is-coming-to-india/), [healthapp.google ইন্ডিয়া](https://healthapp.google/intl/en_in/your-health-connected/)।
+Sources: [India coach post](https://blog.google/intl/en-in/products/hardware/google-health-coach-is-coming-to-india/), [healthapp.google India](https://healthapp.google/intl/en_in/your-health-connected/).
 
 ---
 
-## খাবার, ওজন, অভ্যাস
+## Food, weight, and habits
 
-এই দল HealthTrack-এর লাইফস্টাইল ফিল্ডের প্রতিযোগী। HealthTrack-এ ক্যালরি একটা সংখ্যা। Log Activity বোতাম এখনো অ্যালার্ট।
+These products sit next to HealthTrack’s lifestyle fields. HealthTrack stores calories as one number. The Log Activity button still alerts.
 
 ### Cronometer
 
-বেসিক ফ্রি, Gold $১০.৯৯/মাস বা $৫৯.৯৯/বছর। ভারত স্টোর: Gold ₹৯৯৯/মাস, ₹৫,৯০০/বছর। ৯৫টা নিউট্রিয়েন্ট, ১০ লাখের বেশি ল্যাব-অ্যানালাইজড খাবার। USDA আর Nutrition Coordinating Center। ভিড়ের ডেটাবেস না। বেসিকে হিস্ট্রি ৭ দিন, Gold-এ পুরো সময়। Crono Coach ২৮ জুলাই ২০২৬, ডায়েরি পড়ে, ডায়েরি বদলায় না, ওষুধ বদলানোর অনুমতি নেই। ভারতীয় খাবারের অফিসিয়াল দাবি নেই।
+Basic is free. Gold is $10.99 per month or $59.99 per year. India store: Gold ₹999 per month, ₹5,900 per year. Up to 95 nutrients, and over 1 million lab-analyzed foods from USDA and the Nutrition Coordinating Center. History is 7 days on Basic and any timeframe on Gold. Crono Coach, 28 July 2026, answers from the diary, does not edit it, and is not allowed to change medications. No official claim of an Indian food database.
 
-কপি: খাবার সার্ভিং দিয়ে, একটা ক্যালরি বাক্স দিয়ে না। এড়ানো: ক্লিনিকাল খাতায় বিজ্ঞাপন, ওষুধের হিস্ট্রি ৭ দিনে কেটে ফেলা।
+Worth copying: foods logged as servings. Leave ads off a clinical vault, and leave medicine history on the full timeline.
 
-সোর্স: [cronometer.com/gold](https://cronometer.com/gold/)।
+Source: [cronometer.com/gold](https://cronometer.com/gold/).
 
 ### MyFitnessPal
 
-প্রিমিয়াম $৭৯.৯৯/বছর। প্রিমিয়াম+ $৯৯.৯৯/বছর বা $২৪.৯৯/মাস। বারকোড ১ অক্টোবর ২০২২ থেকে পেইড। Nutrition Coach iOS, ইংরেজি, ছয়টা দেশ। ভারত সেই তালিকায় নেই। ইন্ডিয়া লিস্টিং ২০.৫ মিলিয়ন খাবার দাবি করে। ডেটাবেস কমিউনিটি-নির্মিত। ২০১৮-এ ইউজারনেম, ইমেইল, হ্যাশড পাসওয়ার্ড চুরি। কোম্পানির FAQ সেটাকেই সেই ঘটনা বলে। প্রেসক্রিপশন, ইন্স্যুরেন্স, অ্যাপয়েন্টমেন্ট নেই। GLP-1 লগ যুক্তরাষ্ট্র ও কানাডা।
+Premium $79.99 per year. Premium+ $99.99 per year or $24.99 per month. Barcode scan has been Premium-only since 1 October 2022. Nutrition Coach is iOS, English, and six countries. India is not on that list. The India listing claims 20.5 million foods. The database is community-built. In 2018 an unauthorized party acquired usernames, email addresses, and hashed passwords. The company FAQ says later alerts refer to that same incident. No prescriptions, insurance, or appointments. GLP-1 logging is United States and Canada.
 
-কপি: বারকোড আর ছবি, কনফার্ম করে তারপর লগ। এড়ানো: ফ্রি টিয়ারে এক্সপোর্ট বন্ধ, বিজ্ঞাপনওয়ালা ডায়েরি, ঘাটতির অঙ্ককে পুরো অ্যাপের মেরুদণ্ড বানানো।
+Worth copying: barcode and photo, confirmed by the person before the log. Keep export on the free record. Keep the diary free of ads. Keep deficit math as one lifestyle field.
 
-সোর্স: [প্রিমিয়াম](https://www.myfitnesspal.com/premium), [প্রাইভেসি](https://www.myfitnesspal.com/privacy-policy)।
+Sources: [Premium](https://www.myfitnesspal.com/premium), [privacy](https://www.myfitnesspal.com/privacy-policy).
 
 ### MacroFactor
 
-ডায়েট কোচ, হেলথ রেকর্ড না। যুক্তরাষ্ট্র $১১.৯৯/মাস, $৪৭.৯৯/ছয় মাস, $৭১.৯৯/বছর। ফ্রি টিয়ার নেই। ৭ দিনের ট্রায়াল। ভারত অ্যাপে মাসিক ₹১,০৪৯। বার্ষিক ভারতীয় দাম যাচাই হয়নি। খরচের হিসাব তাদের ভাষায় ডিটারমিনিস্টিক: যা খাওয়া হয়েছে আর ওজনের ট্রেন্ড। আধা দিন লগ করলে সেটাকে পুরো দিন ধরে। হার্ট রেট দেখায়, জমা রাখে না। ওষুধ নেই।
+A diet coach. US prices: $11.99 per month, $47.99 for six months, $71.99 per year. No free tier. A 7-day trial. The India app shows a monthly plan at ₹1,049. The India annual price was not verified. They describe expenditure as a deterministic calculation from logged intake and the weight trend. A partial day is treated as the full intake. Heart rate from integrations is displayed and not stored. No medicines.
 
-কপি: সপ্তাহে একবার ওজনের ট্রেন্ড আর আসল ইনটেক থেকে টার্গেট। ম্যানুয়াল মোড রাখা। এড়ানো: ছবির ক্যালরিকে সত্যি ইনটেক ধরা, ভাইটালের জায়গায় ম্যাক্রো কোচ বসানো।
+Worth copying: a weekly target from the weight trend and actual intake, plus a manual mode. Keep photo calories and macro coaching beside the vital record.
 
-সোর্স: [macrofactor.com/macrofactor](https://macrofactor.com/macrofactor/)।
+Source: [macrofactor.com/macrofactor](https://macrofactor.com/macrofactor/).
 
 ### Noom
 
-ওয়েট প্ল্যান, ৩ জুন ২০২৬-এর খরচের পেজ: $৭০ এক মাস, $২০৯ বারো মাস, আগে থেকে বিল। ট্রায়াল $০ না। উদাহরণ $০.৫০ থেকে $১৮। Welli চ্যাট। মেডিকেল প্রশ্ন Welli-তে না। ১:১ কোচ যুক্তরাষ্ট্রের আলাদা প্রিমিয়াম। GLP-1 ক্লিনিক যুক্তরাষ্ট্র, সব স্টেটে না। প্রাইভেসি পলিসি বলে সাইট সংবেদনশীল ডেটা বিক্রি করতে পারে। ভারতীয় অ্যাপ স্টোরের রুপির মেয়াদ লেখা নেই।
+Weight plan, cost page updated 3 June 2026: $70 for 1 month through $209 for 12 months, billed upfront. No $0 trial is published. Examples on the page run from $0.50 to $18. Welli answers general questions. Medical questions stay off Welli. One-to-one coaching is a separate US Premium add-on. The GLP-1 clinic is US-only and not in every state. The privacy policy says the site may sell sensitive personal data. India App Store rupee rows do not show the billing period.
 
-কপি: ৫–১৫ মিনিটের পাঠ, যেদিন লগও হয়। এড়ানো: খাতাকে ওজন-কমানোর সাবস্ক্রিপশন আর ওষুধের অফারের সাথে বেঁধে ফেলা।
+Worth copying: a 5–15 minute lesson on the same day as a log. Keep the record separate from a weight subscription and a medication offer.
 
-সোর্স: [খরচ](https://www.noom.com/blog/how-much-does-noom-cost/), [ক্লিনিক দাম](https://www.noom.com/med/pricing/)।
+Sources: [cost](https://www.noom.com/blog/how-much-does-noom-cost/), [clinic pricing](https://www.noom.com/med/pricing/).
 
 ### HealthifyMe
 
-বেঙ্গালুরু। Ria এখনো নাম। ভারতীয় খাবার। অ্যাপ পেজ ১০,০০০+ ভারতীয় খাবার দাবি করে। অন্য অফিসিয়াল লাইন আলাদা, তাই এক সংখ্যায় নামা যাচ্ছে না। দাম এক সপ্তাহেই পেজভেদে আলাদা। স্টোরের Healthify+ ₹৩৯৯/১ মাস (আগে ₹৭৯৯), ₹১,৪৯৯/১২ মাস। CGM সহ Smart ₹৬,০০০/১৪ দিন। Pro “₹৩,৫০০/মাস থেকে”। Rx ₹৯,৯৯৯, ₹২০,৯৯৯, ₹৩০,৯৯৯ থেকে, ডাক্তার প্রেসক্রাইব করলে Wegovy, Yurpeak, বা Mounjaro-র এক মাস। ২৮ অক্টোবর ২০২৬-এর প্রাইভেসি: খাবারের ছবি, গ্লুকোজ, বায়োমার্কার ডি-আইডেন্টিফাই করে লাইসেন্স, মডেল ট্রেনিংসহ।
+Bengaluru. The coach is still named Ria. The app page claims 10,000+ Indian foods. Other official lines disagree, so that claim stays separate. Prices on the same week disagree by page. Store Healthify+ is ₹399 for 1 month (struck-through ₹799) and ₹1,499 for 12 months. Smart with a CGM is ₹6,000 for 14 days. Pro says “plans from ₹3,500/month”. Rx starts at ₹9,999, ₹20,999, and ₹30,999, with one month of Wegovy, Yurpeak, or Mounjaro if a doctor prescribes it. The privacy policy changed 28 October 2026 says food photos, glucose, and biomarkers may be de-identified and licensed, including for model training.
 
-কপি: ভারতীয় খাবারের সার্চ, আর দিনের লগ দেখে একটা উত্তর। এড়ানো: গ্যালারি অটো-আপলোড, এই দামের সিঁড়ি, GLP-1 ক্লিনিক।
+Worth copying: search over Indian foods, and one answer from that day’s logs. Keep Snap opt-in. Leave the coach, CGM, and GLP-1 price ladder out of the medical record.
 
-সোর্স: [healthifyme.com/in](https://www.healthifyme.com/in/), [স্টোর](https://store.healthifyme.com/products/healthify-plan-your-24-7-ai-health-coach), [Rx](https://rx.healthify.com/pricing)।
+Sources: [healthifyme.com/in](https://www.healthifyme.com/in/), [store](https://store.healthifyme.com/products/healthify-plan-your-24-7-ai-health-coach), [Rx](https://rx.healthify.com/pricing).
 
 ### Bearable
 
-মুড, ঘুম, ওষুধ, লক্ষণ, ফ্যাক্টর। কোরিলেশন। ফ্রি টিয়ারে আনলিমিটেড লগ আর সিএসভি। ইন-অ্যাপ এআই নেই। এক্সপোর্ট করে ChatGPT-তে খোলার কথা বলে। FAQ-তে $৩৪.৯৯, ৭ দিনের ট্রায়াল। ১৩ অক্টোবর ২০২০-এর পুরোনো পেজ এখনো $৬.৯৯/মাস বলে। ভারত স্টোরে অনেক SKU, লাইফটাইম ₹৯,৯০০। ডাক্তারের লগইন নেই। ইংরেজি। ডেটা ফ্রাঙ্কফুর্ট। ওয়েব অ্যাপ নেই।
+Mood, sleep, medicines, symptoms, and factors, then correlations. The free tier includes unlimited logs and CSV. There is no in-app model. The site tells people to export and open ChatGPT. The FAQ states $34.99 and a 7-day trial. A page dated 13 October 2020 still says $6.99 per month. The India store lists many SKUs, including lifetime at ₹9,900. There is no doctor login, no Hindi, no web app. Health data is in Frankfurt.
 
-কপি: ফ্রি কোর, এক্সপেরিমেন্ট (এক ফ্যাক্টর, সময়, আটটা আউটকাম), ক্যালরি লুকানোর অপশন। এড়ানো: সিএসভিকে ডাক্তারের সম্পর্ক বানানো, দামের কুয়াশা।
+Worth copying: a free core, experiments (one factor, a duration, up to eight outcomes), and a way to hide calories. A CSV is an export. A doctor, provider, or insurer relationship is a login with a permission.
 
-সোর্স: [bearable.app](https://bearable.app/)।
+Source: [bearable.app](https://bearable.app/).
 
 ---
 
-## ঘড়ি, রিং, ল্যাব
+## Watches, rings, and labs
 
 ### Garmin Connect
 
-অ্যাপ আর পুরোনো হিস্ট্রি ফ্রি। Connect+ যুক্তরাষ্ট্র $৬.৯৯/মাস বা $৬৯.৯৯/বছর (২৭ মার্চ ২০২৫)। জাপান ¥১,১৮০ / ¥১১,৮০০। ভারতের অফিসিয়াল Connect+ দাম পাওয়া যায়নি। ফোরামের $৯০ অফিসিয়াল না। Index S2 ভারতে ₹১৯,৯৯০, সেদিন স্টক আউট। Venu X1 ₹৯৭,৯৯০। Pulse Ox সব দেশে মেডিকেল ডিভাইস না। Garmin Coach ফ্রি। Active Intelligence শুধু Connect+।
+The app and the history that existed before Connect+ stay free. US Connect+ is $6.99 per month or $69.99 per year (press release, 27 March 2025). Japan is ¥1,180 / ¥11,800. No official India Connect+ price was found. A forum post of $90 is not an official price. Index S2 was listed in India at ₹19,990 and out of stock that day. Venu X1 is ₹97,990. Pulse Ox is not a medical device and is not offered in every country. Garmin Coach is free. Active Intelligence is Connect+ only.
 
-সোর্স: [Connect+](https://www.garmin.co.jp/products/subscription-plans/garmin-connect-plus-monthly/), [garmin-india.com](https://www.garmin-india.com/)।
+Sources: [Connect+](https://www.garmin.co.jp/products/subscription-plans/garmin-connect-plus-monthly/), [garmin-india.com](https://www.garmin-india.com/).
 
 ### WHOOP
 
-ভারত: One ₹২১,৯৯০, Peak ₹২৮,৯৯০, ১২ মাস আর WHOOP 5.0সহ। Life / MG ভারতে নেই, তাই ECG আর ব্লাড প্রেশার ইনসাইটস এখানে না। যুক্তরাষ্ট্র One $১৯৯, Peak $২৩৯, Life $৩৫৯ প্রতি বছর। রিকভারি, স্ট্রেইন ০–২১, চার স্টেজের ঘুম। জার্নাল ৩০০+ আচরণ। ৫ বার হ্যাঁ আর ৫ বার না, ৯০ দিনে, তারপর অ্যাসোসিয়েশন। সুগার বা পানির গ্লাস তাদের মেম্বারশিপ লাইনে নেই।
+India: One ₹21,990 and Peak ₹28,990, taxes included, each with 12 months and a WHOOP 5.0. Life / MG is marked not available in India, so ECG and blood-pressure insights are absent from the India lineup. US: One $199, Peak $239, Life $359 per year. Recovery, Strain on a 0–21 scale, and four sleep stages. The journal lists 300+ behaviors. An association appears after 5 yes and 5 no within 90 days. Glucose and water glasses are absent from the membership lineup.
 
-সোর্স: [whoop.in](https://www.whoop.in/pages/whoop-devices), [US membership](https://www.whoop.com/us/en/membership/)।
+Sources: [whoop.in](https://www.whoop.in/pages/whoop-devices), [US membership](https://www.whoop.com/us/en/membership/).
 
 ### Oura
 
-ভারত রিটেইল, সরাসরি শিপ না। ৭ অক্টোবর ২০২৬। সদস্যতা UPI। কার্ড সাময়িক বন্ধ, ৩ নভেম্বর ২০২৬। যুক্তরাষ্ট্র Ring 5 $৩৯৯ বা $৪৯৯। সদস্যতা $৫.৯৯/মাস বা $৬৯.৯৯/বছর। ভারতের অফিসিয়াল টাকার সদস্যতা কার্ডে নেই। প্রেস ₹৫৯৯/মাস বলেছে। বার্ষিক টাকা Oura-র পেজে নেই। সদস্যতা ছাড়া তিনটা স্কোর। হার্ট রেট, SpO2, তাপমাত্রার ডিটেইল লক। সিএসভি সদস্যতা শেষ হলেও নেওয়া যায়। Advisor। সাইকেল, প্রেগন্যান্সি, মেনোপজ Gen3+ সদস্যতায়। নিজেরাই বলে মেডিকেল ডিভাইস না। Fertile Window গর্ভনিরোধক না।
+India is a retail market, not direct shipping (help article, 7 October 2026). Membership uses UPI. Credit cards were temporarily unavailable as of 3 November 2026. US Ring 5 is $399 or $499. US membership is $5.99 per month or $69.99 per year. No official INR membership figure is on Oura’s price card. Press reports said ₹599 per month. No annual INR price was on Oura’s help pages. Without a membership the app shows three scores. Heart-rate, SpO2, and temperature detail stay locked. CSV export still works after the plan ends. Advisor, Cycle Insights, Pregnancy Insights, and Menopause Insights are on Gen3 and newer with membership. Oura says the ring is not a medical device. Fertile Window is a conception aid and is not contraception.
 
-কপি: স্কোরের পাশে এই কথা, আর পেইড প্ল্যান শেষ হলেও এক্সপোর্ট। এড়ানো: হাতে লেখা ঘুমের ঘণ্টার ওপর রেডিনেস স্কোর।
+Worth copying: that plain line next to any score, and export that survives a cancelled plan. A readiness score needs overnight heart rate, HRV, and temperature. Tags for caffeine, alcohol, and mood can sit beside typed vitals.
 
-সোর্স: [membership](https://ouraring.com/membership), [সাপোর্ট](https://support.ouraring.com/hc/en-us/articles/4409086524819-Oura-Membership)।
+Sources: [membership](https://ouraring.com/membership), [support](https://support.ouraring.com/hc/en-us/articles/4409086524819-Oura-Membership).
 
 ### Withings
 
-অ্যাপ ফ্রি। মাপ, পিডিএফ, সিএসভি, HealthLink ফ্রি। Withings+ যুক্তরাষ্ট্র $৯.৯৫/মাস বা $৯৯.৫০/বছর। BodyScan 2 ইন্ডিয়া পেজে ₹১,০০০/মাস বা ₹৯,৫০০/বছর। নতুন অ্যাকাউন্ট, ১৩ অক্টোবর ২০২৬-এর পর, অন্য অ্যাপে সিঙ্ক পেইড। ScanWatch 2 বিক্রি ভারতে হয়। ECG আর SpO2-এর অঞ্চল তালিকায় ভারত নেই। কাফের তিনবারের রিডিং আসল রক্তচাপ। স্কেলের হাইপারটেনশন নোটিফিকেশন কাফ না। তাপমাত্রার ডেভিয়েশন থার্মোমিটার না। গ্লুকোমিটার বিক্রি করে না।
+The app is free. Measurements, PDF, CSV, and HealthLink stay free. Withings+ in the US is $9.95 per month or $99.50 per year. The BodyScan 2 India page shows ₹1,000 per month or ₹9,500 per year. Accounts created after 13 October 2026 pay to sync out to other apps. ScanWatch 2 is sold in India. India is absent from the ECG and SpO2 region matrix. A cuff with a three-reading sequence is the blood pressure. A scale hypertension notification is a pattern score. Wrist temperature deviation is a baseline, and BeamO is the contactless thermometer. Withings does not sell a fingerstick glucometer.
 
-কপি: ফ্রি মাপ আর ফ্রি ক্লিনিশিয়ান পিডিএফ। এড়ানো: যে দেশে মেট্রিক বন্ধ, সেই দেশের পেজে সেটা আছে বলা।
+Worth copying: free measurements and a free clinician PDF. Say which of ECG, SpO2, and cuff pressure work in India on the product page.
 
-সোর্স: [Withings+](https://www.withings.com/en-us/pages/withings-plus), [ScanWatch 2 অঞ্চল](https://support.withings.com/hc/en-us/articles/17091438334353-ScanWatch-2-Feature-Availability-By-Region)।
+Sources: [Withings+](https://www.withings.com/en-us/pages/withings-plus), [ScanWatch 2 regions](https://support.withings.com/hc/en-us/articles/17091438334353-ScanWatch-2-Feature-Availability-By-Region).
 
 ### Levels
 
-শুধু যুক্তরাষ্ট্র, ২৮ জুলাই ২০২৬। সদস্যতা $১৫/মাস বা $৮০/বছর। সেন্সর ছাড়াও অ্যাপ চলে। Stelo $৮৯-এ দুই সেন্সর। বেসিক ল্যাব $৯৯, কমপ্রিহেনসিভ $৩৯৯। নিজেরাই বলে হেলথকেয়ার প্রোভাইডার না। নন-ডায়াবেটিক ব্যান্ড (উদাহরণ ফাস্টিং ৮০–৮৬) ভারতের সুগার লগের ডিফল্ট করা যাবে না।
+United States only, availability page updated 28 July 2026. Membership is $15 per month or $80 per year. The app runs without a sensor. Stelo is $89 for two sensors. Basic labs are $99. Comprehensive labs are $399. Levels says it is not a healthcare provider. Its non-diabetic bands, including a fasting example of 80–86 mg/dL, stay off the default targets of an India blood-sugar log.
 
-কপি: সেন্সর অপশনাল রাখা, রিডিংয়ের পাশে খাবার আর ঘুম। এড়ানো: তাদের স্পাইক লেবেলকে ডায়াবেটিসের টার্গেট বানানো।
+Worth copying: typed readings that are useful on their own, with sensors optional, and meal or sleep context beside the number.
 
-সোর্স: [levels.com](https://www.levels.com/)।
+Source: [levels.com](https://www.levels.com/).
 
 ### Function Health
 
-যুক্তরাষ্ট্র। Quest। $৩৬৫/বছর, আগে $৪৯৯। পরিবার $৩৪০। বছরে দুইবার ল্যাব, মিলিয়ে ১৬০+। ভারত নেই। ক্রিটিকাল রেজাল্টে মানুষ ফোন করে। চ্যাট মেডিকেল অ্যাডভাইস দেয় না বলে। নিউ ইয়র্ক আর নিউ জার্সিতে আলাদা ল্যাব চার্জ, অঙ্ক ছাপা নেই। এমআরআই দাম তাদের নিজের পেজেই $৪৯৯, $৮৯৯, আর $৩৬৫ থেকে, তাই এক দাম ধরা হয়নি।
+United States, Quest. $365 per year, down from $499. Family add-on $340. Two lab rounds a year, marketed as 160+ tests. No India service. A person calls on a critical result. The member chat says it does not give medical advice. New York and New Jersey can cost more. No dollar amount is published. MRI prices on Function’s own pages include $499, $899, and “starting at $365”, so none is treated as the single current price.
 
-কপি: প্রতিটি সংখ্যার পাশে এক লাইন, কেন গুরুত্বপূর্ণ, একটা পরের ধাপ। ডাক্তারকে দেওয়ার পিডিএফ। এড়ানো: ব্যাখ্যার ভিতরে পেইড অ্যাড-অন।
+Worth copying: one line on every saved reading, why it matters, and one next step, plus a PDF for a doctor. Keep paid add-ons outside that explanation.
 
-সোর্স: [functionhealth.com](https://www.functionhealth.com/)।
+Source: [functionhealth.com](https://www.functionhealth.com/).
 
 ---
 
-## ওষুধ আর লক্ষণ
+## Medicines and symptoms
 
 ### Medisafe
 
-১ জানুয়ারি ২০২৬ থেকে যুক্তরাষ্ট্রের বাইরে ১৪ দিন পর অ্যাপ লক, না সাবস্ক্রাইব করলে। হেল্প: $৪.৯৯/মাস বা $৩৯.৯৯/বছর। ভারত স্টোরে মাস ₹২৯৯ আর ₹৪৯৯, বছর ₹২,৪৯৯, ₹২,৯৯৯, ₹৩,৯৯৯। ইন্টারঅ্যাকশন যুক্তরাষ্ট্র, ইংরেজি। ওষুধ অর্ডার করে না। Medfriend দেখে, এডিট করে না। মিসড ডোজের অ্যালার্ম নির্ধারিত সময়ের প্রায় এক ঘণ্টা পর। প্রাইভেসি পলিসি ফার্মা পার্টনারের সাথে শেয়ারের কথা বলে। মার্কেটিংয়ের “শেয়ার করি না” লাইনের সাথে পলিসি মেলে না।
+From 1 January 2026, outside the United States the app locks after a 14-day trial unless the user subscribes. Help center: $4.99 per month or $39.99 per year. India App Store SKUs include monthly ₹299 and ₹499, and yearly ₹2,499, ₹2,999, and ₹3,999. The interaction checker is US and English. Medisafe does not order medicines. A Medfriend can view and cannot edit. A missed-dose alert fires about one hour after the scheduled time. The privacy policy allows sharing with pharmaceutical partners. The marketing line that they never share does not match that policy.
 
-HealthTrack-এর ফ্রিকোয়েন্সি লেবেল কাউকে ডাকে না।
+HealthTrack’s frequency label does not notify anyone.
 
-কপি: ঘড়ির সময়, খাওয়া / স্কিপ / স্নুজ। রিফিল কাউন্টডাউন, অর্ডার বসানো ছাড়া। ভিউ-অনলি কেয়ারগিভার। এড়ানো: ট্রায়াল শেষে পুরো তালিকা লক, ভারতীয় নামে যুক্তরাষ্ট্রের ইন্টারঅ্যাকশন চেকার।
+Worth copying: clock time, taken, skipped, and snooze. A refill countdown that stops short of placing an order. A view-only caregiver. Keep the medicine list available after any trial, and keep a US interaction checker off free-text Indian names.
 
-সোর্স: [পেইড অ্যাপ নোট](https://help-center.medisafe.com/en/articles/13052285-medisafe-is-now-a-fully-paid-app-for-users-outside-the-u-s), [দাম](https://help-center.medisafe.com/en/articles/8102603-how-much-does-medisafe-premium-cost)।
+Sources: [paid-app note](https://help-center.medisafe.com/en/articles/13052285-medisafe-is-now-a-fully-paid-app-for-users-outside-the-u-s), [price](https://help-center.medisafe.com/en/articles/8102603-how-much-does-medisafe-premium-cost).
 
 ### Ada
 
-কনজিউমার অ্যাসেসমেন্ট ফ্রি। সম্ভাব্য কারণ আর সম্ভাবনা। নিজেরাই বলে ডায়াগনোসিস না। জ্ঞানভাণ্ডার ক্লিনিশিয়ান কিউরেটেড। ইউরোপে নিজেদের দাবি Class IIa, CE 0123। FDA বা CDSCO পেজ এই খোঁজে মেলেনি, তাই ভারত বা যুক্তরাষ্ট্রের ডিভাইস স্ট্যাটাস এখানে লেখা নেই। হিন্দি নেই। হিন্দি তালিকায় ছিল না ২৪ জুন ২০২৬-এর ভাষা ফেরত আসার পরেও।
+The consumer assessment is free. It returns possible causes and how likely Ada considers them. Ada says that is not a diagnosis. The library is curated by clinicians. Ada’s own medical-quality page says Ada Assess is a Class IIa device under EU rules, CE 0123. No FDA or CDSCO page naming Ada was retrieved, so no US or Indian device status is stated here. Hindi is absent. It was still absent after languages were restored on 24 June 2026.
 
-HealthTrack-এর চ্যাটবট এই তালিকা কপি করবে না: সম্ভাব্য রোগ, সম্ভাবনার শতাংশ, “প্রি-ডায়াগনোসিস”, অ্যাকিউটি স্কোর, সার্টিফায়েড মেডিকেল ডিভাইস। কেউ রোগের নাম জানতে চাইলে বা জরুরি বর্ণনা দিলে উত্তর থামিয়ে ১১২ আর ১০৮, আর ক্লিনিশিয়ান দেখানো।
+HealthTrack’s chatbot stays off that list: possible conditions, likelihoods, “pre-diagnosis”, an acuity score, and “certified medical device”. If someone asks what condition they have, or describes an emergency, stop the reply and show 112 and 108, plus a prompt to see a clinician.
 
-সোর্স: [ada.com](https://ada.com/), [ডায়াগনোসিস হেল্প](https://ada.com/help/can-ada-give-me-a-medical-diagnosis-can-ada-diagnose-medical-conditions/)।
+Sources: [ada.com](https://ada.com/), [diagnosis help](https://ada.com/help/can-ada-give-me-a-medical-diagnosis-can-ada-diagnose-medical-conditions/).
 
 ---
 
-## হাসপাতাল আর ভার্চুয়াল কেয়ার
+## Hospitals and virtual care
 
 ### MyChart
 
-Epic-এর পোর্টাল। যে হাসপাতাল Epic চালায়, শুধু সেখানকার রোগী। ভারতের কোনো হাসপাতালের প্রাইমারি সোর্স এই খোঁজে মেলেনি। রোগীর কাছে অ্যাপ ফ্রি। ল্যাব, ভিজিট সামারি, ওষুধ রিনিউ, ই-চেকইন, ভিডিও, প্রক্সি, বিল। Art ক্লিনিশিয়ানের জন্য। Emmie রোগীর সামারি। Happy Together কয়েকটা সংস্থা মেলাতে পারে। Share Everywhere সাময়িক কোড।
+Epic’s patient portal. It works for someone who already has an account at an organization that runs Epic. No primary source in this search named an Indian hospital on MyChart. The patient app is free. It can show labs, visit summaries, medication renewal, eCheck-In, video visits, proxy access, and bills, when that organization turns them on. Art is for clinicians. Emmie writes patient-facing summaries. Happy Together can combine participating organizations. Share Everywhere gives a temporary browser code.
 
-কপি: কে ফাইল খুলেছে, ট্রেন্ডের পিডিএফ, প্রক্সির নিয়ম স্পষ্ট। এড়ানো: হাসপাতালের চার্টের সাথে যুক্ত না থেকে MyChart-এর মতো দাবি।
+Worth copying: who opened the record, a trend PDF, and a clear proxy rule. A personal notebook stays labelled as the person’s log until it is wired to a hospital chart.
 
-সোর্স: [mychart.org](https://www.mychart.org/), [Emmie](https://www.epic.com/software/emmie/)।
+Sources: [mychart.org](https://www.mychart.org/), [Emmie](https://www.epic.com/software/emmie/).
 
 ### Teladoc
 
-যুক্তরাষ্ট্র ও কানাডা। ভারতে কনজিউমার ডাক্তার সার্ভিস না। সাপোর্টে +৯১ নম্বর আছে। আলাদা স্পনসর অ্যাপ আছে। দাম পেজে পেজে আলাদা: বিলিং FAQ-তে ২৪/৭ কেয়ার $৮৯, মেন্টাল হেলথ $১১৯+। মেন্টাল হেলথ পেজে থেরাপি $৯৫, প্রথম সাইকিয়াট্রি $২৩৫, ফলোআপ $১০৫। ২৪ ঘণ্টার ভিতর ক্যানসেল করলে $৫০ পর্যন্ত। দাম কনফার্মের আগে দেখায়। ভিজিটের পর সিকিউর মেসেজ। জরুরি কেয়ার ডাক্তার অ্যাকসেপ্ট বাটন ছাড়াই শুরু।
+United States and Canada. The consumer product is not an India doctor service. Global support lists +91 (0)11 7127 9637. Separate sponsor apps exist. Prices disagree across Teladoc’s own pages. The billing FAQ lists 24/7 care at $89 and mental health at $119 or more. The mental-health page lists therapy at $95, initial psychiatry at $235, and psychiatry follow-up at $105. Cancelling inside 24 hours can cost up to $50. The account shows the cost before confirm. A summary lands in the secure message center afterward. Urgent care starts after symptom intake, without a doctor accept button.
 
-কপি: ফি আগে দেখানো, ক্যানসেল নিয়ম, ভিজিটের পর ছোট নোট। এড়ানো: বাইরের মিটিং লিঙ্ককেই ভিডিও প্রোডাক্ট বানানো, এআই দিয়ে প্রেসক্রাইব।
+Worth copying: the fee before confirm, the late-cancel rule, and a short note after the visit. Video belongs in the product. Prescribing stays with a clinician.
 
-সোর্স: [teladochealth.com](https://www.teladochealth.com/), [বিলিং FAQ](https://www.teladochealth.com/helpcenter/article/billing-and-insurance-faqs)।
+Sources: [teladochealth.com](https://www.teladochealth.com/), [billing FAQ](https://www.teladochealth.com/helpcenter/article/billing-and-insurance-faqs).
 
 ---
 
-## ভারতের মার্কেটপ্লেস আর রেকর্ড
+## India marketplaces and records
 
 ### Practo
 
-রোগী ডাক্তার খোঁজে, ক্লিনিক বুক করে, অনলাইনে কথা বলে, ওষুধ আর টেস্ট অর্ডার করে। ক্লিনিক Ray, হাসপাতাল Insta, কিউ Qikwell। অডিও “₹১৯৯ থেকে”, ৭ দিন ফলোআপ ফ্রি। বিশেষত্ব ₹৭০০–₹৮৯৯। Prime বুকিং রোগীর জন্য ফ্রি। Plus ₹১,১৯৯/৩০ দিন (১৫ কনসাল্ট), ₹২,৪৯৯/৩ মাস, ₹২,৯৯৯/বছর। অ্যাবাউট পেজ এখনো “আনলিমিটেড” বলে। দামের পেজের ক্যাপটাই ব্যবহার্য। Ray-এর প্ল্যান পেজে ৯৯৯ আর ১,৪৯৯ প্রতি মাস, মুদ্রা চিহ্ন নেই। ABDM-এ Ray যোগ দিয়েছে বলে তাদের ব্লগ।
+Patients find doctors, book clinic visits, consult online, and order medicines and tests. Clinics run on Ray, hospitals on Insta, queues on Qikwell. Private audio “starts at just ₹199”, with a 7-day free follow-up. Specialty prices on the same page run from ₹700 to ₹899. Prime booking is free for the patient. Plus is ₹1,199 every 30 days (15 consults a month), ₹2,499 every 3 months, or ₹2,999 a year. The about page still says “unlimited” with a fair-usage asterisk. The priced page, with caps, is the one to use. Ray’s plan page lists 999 and 1,499 per month and does not print a currency symbol. Practo’s blog says Ray joined ABDM.
 
-HealthTrack-এর ডাক্তার কিউ আছে। শহরভিত্তিক ডিরেক্টরি, কাউন্সিল চেক, আর ডিজিটাল প্রেসক্রিপশন নেই।
+HealthTrack has a doctor queue. It does not have a city directory, a council check, or a digital prescription from the visit.
 
-কপি: বুকিং ফ্রি, ফি ডাক্তারের। ফলোআপের দিন লেখা। এড়ানো: প্র্যাকটিশনার প্রোফাইল “একচেটিয়া Practo-র” এই লাইন, আর ডায়াগনোসিস দেয় এমন গাইড।
+Worth copying: free booking, with the fee set by the doctor, and the follow-up window written down. Practitioner profiles stay with the practitioner. A guide in the product stays information.
 
-সোর্স: [consult](https://www.practo.com/consult), [Plus](https://www.practo.com/plus), [Ray](https://www.practo.com/providers/clinics/ray)।
+Sources: [consult](https://www.practo.com/consult), [Plus](https://www.practo.com/plus), [Ray](https://www.practo.com/providers/clinics/ray).
 
 ### eka.care
 
-Orbi Health। রোগীর পিএইচআর, ABHA, ডাক্তারের EMR, EkaScribe। NHA-র ডিজিটাল সলিউশন পার্টনার তালিকায় “Eka Care EMR”। রোগী অ্যাপ ফ্রি। Eka Pass ₹৪৯/মাস, ₹৪৪৯/বছর। কোন ফিচার আনলক করে, তাদের পেজে পাওয়া যায়নি। ডাক্তার, GST ছাড়া: Doc Plus ₹১৬,৯৯৯/বছর, Doc Pro ₹১৮,৭৪৯, Clinic Pro ₹১,০০,০০০। ১ সেপ্টেম্বর ২০২৫ থেকে ফ্রি ডাক্তার প্ল্যান ৩০ দিনের ডেটা, ১ জিবি, এক সিট। পরে উল্টে দেওয়ার অফিসিয়াল নোট মেলেনি।
+Orbi Health. A patient PHR, ABHA, a doctor EMR, and EkaScribe. The National Health Authority partner page lists “Eka Care EMR”. The patient app is free. Eka Pass is ₹49 per month and ₹449 per year. No Eka page fetched here states which features that pass unlocks. Doctor plans, exclusive of 18% GST: Doc Plus ₹16,999 per year, Doc Pro ₹18,749, Clinic Pro ₹1,00,000. From 1 September 2025 the free doctor plan is limited to 30 days of patient data, 1 GB, and one seat. No later official reversal was found.
 
-রোগী: আপলোড, ল্যাবকে স্ট্রাকচার্ড করা, ফ্যামিলি, সিক্রেট লকার ডিভাইসে, Gmail রিড-অনলি, ABHA স্ক্যান অ্যান্ড শেয়ার। ডাক্তার: WhatsApp প্রেসক্রিপশন, অডিও থেকে স্ক্রাইব।
+Patients can upload files, turn lab reports into structured data, keep family profiles, store a Secret Locker on the device, connect Gmail read-only, and use ABHA Scan and Share. Doctors on the paid plan can send a digital prescription. EkaScribe can draft one from consultation audio, and WhatsApp is a delivery channel.
 
-এটাই ভারতে HealthTrack-এর সবচেয়ে কাছের পূর্ণ প্ল্যাটফর্ম। ফাঁক যা থাকে: দৈনিক রক্তচাপ-মুড-ইন্স্যুরেন্স একসাথে, ছোট পরিবারের খাতা, ডাক্তারকে ₹১৭ হাজার না দিয়ে।
+This is the closest full India platform. The remaining opening is daily blood pressure, mood, and insurance together, in a small household log, without a ₹17,000 doctor seat.
 
-সোর্স: [eka.care](https://www.eka.care/), [প্ল্যান](https://www.eka.care/practice-management/plan-pricing), [ABDM Connect](https://developer.eka.care/docs/hie-cm/phr/overview)।
+Sources: [eka.care](https://www.eka.care/), [plans](https://www.eka.care/practice-management/plan-pricing), [ABDM Connect](https://developer.eka.care/docs/hie-cm/phr/overview).
 
 ### Tata 1mg
 
-Tata Digital। ওষুধ, হোম ল্যাব, অনলাইন কনসাল্ট। ডাউনলোড পেজ কনসাল্ট ফ্রি বলে। আলাদা ফি কার্ড পাওয়া যায়নি। Maglectin উদাহরণ ₹২৪৯, এমআরপি ₹২৮৫। হোমপেজে Gold ফুল বডি ₹২,৪৯৯ (₹৪,৯৯৮-এর জায়গায়)। স্যাম্পল কালেকশন ফ্রি বলে। হেলথ রেকর্ড, ফ্যামিলি, পিল রিমাইন্ডার ক্যানসার-কেয়ার পেজে। Pulse ফার্মা কোম্পানির জন্য, রোগীর চ্যাট না।
+Tata Digital. Medicines, home labs, and online consults. The download page says online consults are free. No public consult fee card was on the pages fetched. A live Maglectin page showed ₹249 against an MRP of ₹285. The homepage listed Comprehensive Gold Full Body Checkup at ₹2,499 against ₹4,998. The download page says home sample collection is free. Health records, family records, and a pill reminder appear on the product. Pulse, described on the about page, is an AI product for pharma companies.
 
-কপি: প্রেসক্রিপশন ফাইল ওষুধের সারির সাথে। এড়ানো: লগকে চেকআউট বানানো। যেকোনো ফার্মেসির ওষুধ তালিকায় থাকবে।
+Worth copying: the prescription file kept on the medicine it authorizes. A medicine from any pharmacy can sit in the log without a checkout.
 
-সোর্স: [1mg.com](https://www.1mg.com/), [প্রাইভেসি](https://www.1mg.com/PrivacyPolicy)।
+Sources: [1mg.com](https://www.1mg.com/), [privacy](https://www.1mg.com/PrivacyPolicy).
 
 ### Apollo 24|7
 
-Apollo Healthco। কনসাল্ট ₹২০০ থেকে। বাতিল হলে ৫–৭ কার্যদিবসে রিফান্ড। Circle ব্লগ, ১২ মে ২০২৫: ₹১৯৯/১২ মাস। সেটা লাইভ কার্ট না। সিবিসি জাতীয় পেজ ₹৪৪৯, দিল্লি পেজ ₹৩৯৯ আর টেবিলে ₹৪৩০। ফুল বডি বেসিক ₹৮৭৯। ডাক্তার সংখ্যা অ্যাবাউট, প্লে, আর অ্যাপ স্টোরে ৬,০০০+, ৪,৪০০+, ২,২০০+। হাসপাতাল রেকর্ড Apollo-র নিজের সিস্টেম থেকে। ইন্স্যুরেন্স পেজের “₹১.৫ প্রতিদিনে ১ কোরে” তারকাচিহ্নসহ, বয়স আর ডিডাক্টিবল ছাড়া, তাই দাম হিসেবে নেওয়া হয়নি। ABDM FAQ-এর নামধরা পিএইচআর তালিকায় Apollo 24|7 নেই। ৩০ জুন ২০২৩ পর্যন্ত Apollo Hospitals তিনটা মাইলস্টোন করেছিল, সেটা হাসপাতাল, এই অ্যাপ না।
+Apollo Healthco. Online consults start at ₹200. A cancelled online consult is refunded in 5–7 working days. A blog updated 12 May 2025 prices Circle at ₹199 for 12 months. That figure is the article, not a live cart on 15 November 2026. The national CBC page shows ₹449. The Delhi page shows ₹399 in the hero and ₹430 in the city table. Apollo Full Body Checkup – Basic shows ₹879. Doctor counts disagree: 6,000+ on About, 4,400+ on Play, 2,200+ on the App Store. Hospital records sync from Apollo’s own systems. The insurance page headlines “₹1 crore cover at ₹1.5 per day” with an asterisk and no age or deductible, so it is not used as a price. Apollo 24|7 is absent from the PHR apps named in the ABDM FAQ. Apollo Hospitals had completed three ABDM milestones as of 30 June 2023. That note is about the hospitals.
 
-কপি: প্রেসক্রিপশন আর রিপোর্ট এক ব্যক্তির ওপর। এড়ানো: শুধু নিজের হাসপাতালের রেকর্ডকেই পুরো স্বাস্থ্য ইতিহাস বলা।
+Worth copying: prescriptions and reports kept on one person. Records from other hospitals stay in the same timeline.
 
-সোর্স: [apollo247.com](https://www.apollo247.com/)।
+Source: [apollo247.com](https://www.apollo247.com/).
 
 ### PharmEasy
 
-Threpsi মালিক, Axelia অপারেটর, API Holdings-এর নিচে। ওষুধ ১৯,০০০+ পিন, ১,২০০+ শহর। কনসাল্ট পেজ ₹২৪৯ থেকে। ১ এপ্রিল ২০২৬-এর ব্লগ ₹১৯৯ বলে। ল্যাব বুক করলে একটা কনসাল্ট ফ্রি, পেজের FAQ। Swasth.AI হোয়াটসঅ্যাপে ল্যাব ব্যাখ্যা করে, ডায়াগনোসিস না। প্রাইভেসি: প্রেসক্রিপশন মার্কেটিংয়ে, ভারতের বাইরেও যেতে পারে। স্টোরেজ AWS ভারত, Google ক্লাউড সিঙ্গাপুর, MongoDB আয়ারল্যান্ড।
+Threpsi Solutions owns the platform. Axelia Solutions operates it. Threpsi is wholly owned by API Holdings. Medicine delivery is described as 19,000+ PIN codes in 1,200+ cities. The consult page says “starting at ₹249”. A blog updated 1 April 2026 still said ₹199. The consult FAQ says a consult is free for anyone who books a PharmEasy Labs test. Swasth.AI on WhatsApp explains lab reports and says it is not a diagnosis. The privacy policy allows prescriptions to be used for marketing and transferred outside India. Storage named there is AWS in India, Google Cloud in Singapore, and MongoDB Cloud in Ireland.
 
-কপি: আপলোড করা প্রেসক্রিপশন ওষুধের সাথে রাখা। রিফিল আলাদা, ডোজের সময়সূচি আলাদা। এড়ানো: প্রেসক্রিপশন দিয়ে বিজ্ঞাপন, অর্ডার হিস্ট্রিকেই রেকর্ড বানানো।
+Worth copying: an uploaded prescription kept on the medicine, and a refill reminder kept separate from the dose schedule. Marketing stays off the prescription. Order history stays separate from the clinical entry.
 
-সোর্স: [pharmeasy.in](https://pharmeasy.in/), [প্রাইভেসি](https://pharmeasy.in/legal/privacy-policy)।
+Sources: [pharmeasy.in](https://pharmeasy.in/), [privacy](https://pharmeasy.in/legal/privacy-policy).
 
 ### MediBuddy
 
-Phasorz। DocsApp ২০২০-এ এই ব্র্যান্ডে। Medi Assist আলাদা লিস্টেড টিপিএ। ব্রাউজ ফ্রি, চাকরিদাতা ছাড়াও ব্যবহার যায়। ওয়ালেট শুধু কর্পোরেট প্ল্যানে। কনসাল্ট, ল্যাব, ওষুধ ইউপিআই বা কার্ডে। Mia চ্যাট, ভুল হতে পারে বলে নোটিশ আছে। ডেটা ভারতে। চাকরিদাতা ফরমাল রিকোয়েস্টে ডেটা পেতে পারে, পলিসি যা বলে।
+Phasorz Technologies. DocsApp was folded into this brand in 2020. Medi Assist, the listed TPA, is a separate company. Browsing is free, and a retail user can use the app with no employer. The OPD wallet exists only on a corporate or insurer plan. Consults, labs, and medicines are pay-per-use by UPI, debit card, or credit card. Mia is a chatbot with a notice that answers may be wrong. The privacy policy says data is hosted in India. An employer can receive data on a formal request, under the approvals the policy names.
 
-কপি: পেমেন্টের আগে লেবেল: ওয়ালেট, কো-পে, বা নিজের পয়সা। বুক, পে, বাতিল, প্রেসক্রিপশন সেই ব্যক্তির ফাইলে। এড়ানো: ইন্স্যুরেন্স মডিউলকে টিপিএ ডেস্ক বানানো। বাড়ির খাতায় যেকোনো ইন্স্যুরারের সারি থাকবে।
+Worth copying: a checkout label before confirm (wallet, co-pay, or self-pay), and book, pay, cancel, with the prescription kept on that person. The household policy list holds any insurer. A TPA claims desk stays with the TPA.
 
-সোর্স: [medibuddy.in](https://www.medibuddy.in), [টার্মস](https://www.medibuddy.in/terms.html)।
-
----
-
-## ABDM আর ABHA
-
-১৫ নভেম্বর ২০২৬-এর সরকারি পেজ। আইনি মতামত না।
-
-ABHA নম্বর ১৪ অঙ্কের আইডি। ABHA অ্যাড্রেস `নাম@abdm`। এটা আয়ুষ্মান কার্ড না, পিএম-জেওয়াই-এর যোগ্যতা না। এনরোল বাধ্যতামূলক না। ABHA না থাকলে চিকিৎসা বন্ধ করা যাবে না, FAQ তাই বলে।
-
-HIE-CM কনসেন্ট দেখে, তারপর রেকর্ড যায়। ক্লিনিকাল রেকর্ড কেন্দ্রে জমা হয় না। হাসপাতাল HIP। যে পড়তে চায় সে HIU। লকার সাবস্ক্রাইব করে, নোটিফিকেশন আসে, নোটিফিকেশনে রেকর্ড থাকে না। কনসেন্ট, তারপর হেলথ ইনফরমেশন রিকোয়েস্ট।
-
-একটা প্রাইভেট অ্যাপ লিংকড রেকর্ড দেখাতে চাইলে সার্ভারে P1 (অ্যাড্রেস), P2 (কেয়ার কনটেক্সট), P3 (কনসেন্ট ও ফেচ)। `clientSecret` ব্রাউজারে যাবে না। স্যান্ডবক্স, হেলথ টেক কমিটি, সিকিউরিটি অডিট, তারপর অ্যাপ্লিকেশন ডিরেক্টরি। ইউজার আপলোড লকার সার্টিফিকেশন আর M2। অ্যাপয়েন্টমেন্ট UHI। ক্লেম NHCX। HIE-CM পেজে NHCX এন্ডপয়েন্ট নেই।
-
-ইউআইতে বলা যাবে না: ABDM-কমপ্লায়েন্ট, সার্টিফায়েড পিএইচআর, হেলথ লকার, কনসেন্ট ম্যানেজার, ABDM রেকর্ড জমা রাখে, ABHA মানে আয়ুষ্মান কার্ড, সেভ করা রক্তচাপ জাতীয় রেকর্ড, অন্য হাসপাতাল দেখতে পাচ্ছে।
-
-সোর্স: [FAQ](https://abdm.gov.in/FAQ), [PHR](https://docs.abdm.gov.in/docs/hiecm/v3/concepts/participants/phr), [P1](https://docs.abdm.gov.in/docs/hiecm/v3/milestones/p1), [P3](https://docs.abdm.gov.in/docs/hiecm/v3/milestones/p3), [P4](https://docs.abdm.gov.in/docs/hiecm/v3/milestones/p4)।
+Sources: [medibuddy.in](https://www.medibuddy.in), [terms](https://www.medibuddy.in/terms.html).
 
 ---
 
-## ইন্স্যুরেন্স
+## ABDM and ABHA
 
-HealthTrack-এর সারি: টাইপ, প্রোভাইডার, নম্বর, কভারেজ, প্রিমিয়াম, শুরু, শেষ, ডকুমেন্ট, অ্যাকটিভ। স্ক্রিন ডকুমেন্ট দেখায় না। Add বোতাম বন্ধ। Expiring Soon `--`।
+Public pages read on 15 November 2026. This is what those pages describe. It is not a legal opinion.
 
-Policybazaar অ্যাপ (প্লে, ৬ নভেম্বর ২০২৬): কেনা পলিসি ডাউনলোড, পরিবারের সাথে শেয়ার, রিনিউ, নেটওয়ার্ক হাসপাতাল, ক্লেম স্ট্যাটাস। নীভা বুপা: হেলথ কার্ডে নম্বর, নাম, কভারেজ, প্ল্যান, ভ্যালিডিটি। নেটওয়ার্ক হাসপাতালে কার্ড আর ফটো আইডি। অ্যাপ তাদের নিজের ইন-ফোর্স পলিসি দেখে। মেয়াদ শেষ হলে সেই অ্যাপ খোলে না। খাতায় মেয়াদোত্তীর্ণ পলিসি ইতিহাসের পাশে থাকা দরকার।
+An ABHA number is a 14-digit identifier. An ABHA address looks like `name@abdm`. It is separate from an Ayushman card and from PM-JAY eligibility. Enrollment is voluntary. The FAQ says lack of an ABHA number is not a reason to deny treatment.
 
-DigiLocker: IRDAI সার্কুলার ৯ ফেব্রুয়ারি ২০২১। United India আর IFFCO-TOKIO পলিসি ডকুমেন্ট তোলার কথা লেখে। UIIC-এর ধাপে কাস্টমার আইডি, এফেকটিভ ডেট, পলিসি নম্বর, কনসেন্ট।
+HIE-CM checks identity and consent, and only then allows records to move. Clinical records stay with the provider that created them. A hospital system is a HIP. The party that asks to read is an HIU. A locker subscribes for a notification. The notification does not contain the record. Consent comes first, then a health-information request.
 
-কপি: সারিতে ফাইল। শেয়ার করার কার্ড। শেষ তারিখ থেকে “শীঘ্রই শেষ”। সারিটা কে টাইপ করেছে না ইন্স্যুরার দিয়েছে, সেটা চিহ্ন। এড়ানো: ক্লেম সেটেলমেন্ট এই অ্যাপে। সেটা ইন্স্যুরারের।
+A private app that wants to show linked records needs a server bridge for P1 (address), P2 (care context), and P3 (consent and fetch). The `clientSecret` stays off the browser. The path after that is sandbox access, Health Tech Committee review, a security audit, and a listing in the ABDM Application Directory. User-uploaded files need health-locker certification and M2. Appointments are the UHI rail. Claims are the NHCX rail. The HIE-CM facility page does not document an NHCX endpoint.
 
-সোর্স: [নীভা কার্ড](https://www.nivabupa.com/health-insurance/health-card.html), [IRDAI সার্কুলার](https://www.digilocker.gov.in/assets/img/Circulars/IRDAI%20-%20Circular%2009022021.pdf)।
+The UI can say the rows are the person’s HealthTrack log. It stays silent on ABDM-compliant, certified PHR, health locker, consent manager, “ABDM stores the records”, “an ABHA is an Ayushman card”, “a saved blood pressure is a national record”, and “another hospital can see this”.
 
----
-
-## চারটা লেন যা শেষ হয়নি
-
-Cult.fit, Ultrahuman, আর Strava-র দাম বা ফিচার এই ফাইলে নেই। সেই খোঁজ ফেরেনি।
-
-Fasten Onprem-এর README (মূল `LICENSE` লিঙ্ক ৪০৪, লাইসেন্স `LICENSE.md`): ওপেন-সোর্স অ্যাপ হাসপাতাল থেকে সরাসরি ইমপোর্ট করে না। হাতে এন্ট্রি, অথবা অন্য জায়গা থেকে এক্সপোর্ট করা FHIR বান্ডেল আপলোড। হোস্টেড Fasten Connect আলাদা, সেই অবকাঠামো রিপোতে নেই।
-
-Tidepool প্ল্যাটফর্ম রিপোর লাইসেন্স BSD-স্টাইল, কপিরাইট ২০১৮ Tidepool Project। ডায়াবেটিসের ডিভাইস ডেটার জন্য। HealthTrack-এর সুগার ফিল্ডের পাশে পরে দেখার মতো, এখন কপি করার স্পেক না।
+Sources: [FAQ](https://abdm.gov.in/FAQ), [PHR](https://docs.abdm.gov.in/docs/hiecm/v3/concepts/participants/phr), [P1](https://docs.abdm.gov.in/docs/hiecm/v3/milestones/p1), [P3](https://docs.abdm.gov.in/docs/hiecm/v3/milestones/p3), [P4](https://docs.abdm.gov.in/docs/hiecm/v3/milestones/p4).
 
 ---
 
-## কোথায় জেতা যায়
+## Insurance
 
-একসাথে যাদের নেই, HealthTrack-এর খাতায় আছে:
+HealthTrack stores type, provider, number, coverage, premium, start, end, document, and active. The screen does not show the document. The Add button is unwired. Expiring Soon shows `--`.
 
-- দৈনিক রক্তচাপ আর সুগার, ঘড়ি বা সিজিএম কিনে না।
-- ওষুধের শুরু-শেষ, যেকোনো ডাক্তারের প্রেসক্রিপশন ফাইল।
-- মুড, স্ট্রেস, ঘুমের ঘণ্টা।
-- বাড়ির সব পলিসি, এক ইন্স্যুরারের অ্যাপ না।
-- ডাক্তার নিজে অ্যাকসেপ্ট করেন। প্রোভাইডার সার্ভিস আলাদা।
-- কনফিগে Sarvam আছে, তাই কথা ভারতীয় ভাষায় বের হতে পারে। Ada, Bearable, Cronometer, আর Oura Advisor ইংরেজি বা ইউরোপীয় ভাষায়।
+The Policybazaar app (Play listing updated 6 November 2026) stores policies bought or managed there: download, share with family, renew, find network hospitals, and track claim status. Niva Bupa’s health card carries policy number, insured name, coverage, plan type, and validity. At a network hospital the card is shown with a photo ID. Niva’s FAQ limits its own app to the in-force period. A health record still keeps the expired policy beside the care history.
 
-এই জয় তখনই থাকে, যখন লগ ইউজারের থাকে, বিজ্ঞাপনে যায় না, আর চেকআউট হয় না। PharmEasy, 1mg, Noom, Healthify-এর প্রাইভেসি পেজ সেই লাইন অতিক্রম করে।
+DigiLocker: IRDAI circular of 9 February 2021. United India and IFFCO-TOKIO document pulling a policy file into DigiLocker. UIIC’s steps use customer ID, effective date, policy number, and consent.
 
----
+Worth copying: the file on the row, a shareable card, “expiring soon” from the end date, and a mark for whether the person typed the row or an insurer issued it. Settlement stays with the insurer.
 
-## এখন বানানোর মতো কাজ
-
-পয়সা বা সার্টিফিকেশন লাগে না। স্ক্রিনে ইতিমধ্যে ভাঙা জায়গা।
-
-1. লাইফস্টাইল, মেন্টাল হেলথ, ইন্স্যুরেন্সের যোগ বোতাম চালু করা। সারি ডেটাবেসে আছে।
-2. ইন্স্যুরেন্সে শেষ তারিখ থেকে “শীঘ্রই শেষ”, আর ডকুমেন্ট সারিতে।
-3. ওষুধে ঘড়ির সময়, খাওয়া, স্কিপ। ফ্রিকোয়েন্সি লেবেল রেখে।
-4. এক ক্লিকে সিএসভি। ওষুধ, ভাইটাল, প্রেসক্রিপশন। ফ্রি।
-5. ডাক্তারকে দেওয়ার এক পিডিএফ: শেষ রক্তচাপ, সুগার, অ্যাকটিভ ওষুধ, শেষ প্রেসক্রিপশন।
-6. চ্যাটবটে জরুরি থামানো: ১১২, ১০৮। সম্ভাব্য রোগের তালিকা না।
-7. লগইন ছাড়া চ্যাট বন্ধ করা, নাহলে খাতার পাশের বোট খাতা দেখেও না, আর খোলাও থাকে।
-
-তারপর, এখনো সেন্সর ছাড়া:
-
-8. রিফিল কাউন্ট। কেয়ারগিভার শুধু দেখে।
-9. ঘুমের ঘণ্টা মেন্টাল হেলথ থেকে ড্যাশবোর্ডে। স্টেজ না, যতক্ষণ সেন্সর নাই।
-10. অ্যাপয়েন্টমেন্টে ফি আর বাতিলের নিয়ম, যদি দাম থাকে। ভিজিটের পর একটা নোট।
-11. Health Connect পড়া অপশনাল। হাতের লেখা আগে।
-
-ABDM, ফার্মেসি ডেলিভারি, সিজিএম, আর ঘড়ির স্কোর এই তালিকার পরে। eka.care সেই রেল ইতিমধ্যে দিচ্ছে। নিজে লকার দাবি করার আগে সার্ভার কলব্যাক আর ডিরেক্টরি লাগে।
+Sources: [Niva card](https://www.nivabupa.com/health-insurance/health-card.html), [IRDAI circular](https://www.digilocker.gov.in/assets/img/Circulars/IRDAI%20-%20Circular%2009022021.pdf).
 
 ---
 
-## যা ইচ্ছে করে বাদ
+## Four lanes that did not finish
 
-- ঘড়ি না কিনলে ঘুমের স্টেজ লুকানো।
-- বারকোড বা এক্সপোর্ট পেইড করা।
-- ভিড়ের বানানো ক্যালরিকে ল্যাবের সংখ্যা বানানো।
-- ওজন-কমানোর কোর্স বা GLP-1 অফার খাতার ভিতরে।
-- প্রেসক্রিপশন দিয়ে রিমার্কেটিং।
-- যুক্তরাষ্ট্রের ড্রাগ ইন্টারঅ্যাকশন ভারতীয় টেক্সটে।
-- ABHA না থাকলে অ্যাপ বন্ধ।
-- “ABDM-কমপ্লায়েন্ট” ব্যাজ।
-- এআই দিয়ে রোগের নাম বা ওষুধের নির্দেশ।
+Cult.fit, Ultrahuman, and Strava have no prices or feature notes in this file. Those briefs did not come back.
+
+Fasten Onprem’s README (the raw `LICENSE` URL returned 404; the license file is `LICENSE.md`): the open-source app cannot import from healthcare providers directly. A person enters data by hand, or uploads a FHIR bundle exported elsewhere. Hosted Fasten Connect is a separate service and is not in that repo.
+
+The Tidepool platform repo uses a BSD-style license, copyright 2018, Tidepool Project. It is for diabetes device data. It can be read later next to HealthTrack’s blood-sugar field. It is not a spec to copy now.
+
+---
+
+## Where HealthTrack can win
+
+The notebook already holds a combination the others split apart:
+
+- Daily blood pressure and blood sugar, with no watch and no CGM purchase.
+- A medicine’s start and end, plus a prescription file from any doctor.
+- Mood, stress, and sleep hours.
+- Every household policy, across insurers.
+- A doctor who accepts the visit, and a separate provider service.
+- Sarvam is already in the config, so speech can come out in Indian languages. Ada, Bearable, Cronometer, and Oura Advisor are English or European languages.
+
+That holds while the log stays with the user, stays out of ads, and stays off a checkout. The privacy pages of PharmEasy, 1mg, Noom, and Healthify describe wider uses.
+
+---
+
+## Work that can be built now
+
+No new fee and no certification. The screens already show the gaps.
+
+1. Wire the add buttons for lifestyle, mental health, and insurance. The tables already exist.
+2. Drive “expiring soon” from the policy end date, and show the document on the row.
+3. Add clock time, taken, and skipped on medicines. Keep the frequency label.
+4. One-click CSV for medicines, vitals, and prescriptions. Free.
+5. One PDF for a doctor: latest blood pressure, latest sugar, active medicines, latest prescription.
+6. On the chatbot, stop for emergencies and show 112 and 108.
+7. Require login for chat, so the assistant can see the chart and the endpoint is not open.
+
+Then, still without a sensor:
+
+8. A refill count, and a caregiver who can view.
+9. Sleep hours from the mental-health log on the dashboard. Sleep stages wait for a sensor.
+10. If an appointment has a price, show it before confirm, with the cancel rule, and store a short note after the visit.
+11. Optional Health Connect read. A manual entry wins.
+
+ABDM, pharmacy delivery, a CGM, and watch scores come after this list. eka.care already offers the national rail. A locker claim waits on a server callback and a directory listing.
+
+---
+
+## Leave out
+
+- Hiding sleep stages until a watch is purchased.
+- Charging for barcode scan or for export.
+- Treating a crowd-built calorie as a lab value.
+- A weight-loss course or a GLP-1 offer inside the record.
+- Remarketing from prescriptions.
+- A US drug-interaction checker on Indian free text.
+- Blocking the app when there is no ABHA.
+- An “ABDM-compliant” badge.
+- An AI reply that names a disease or directs a medicine.
