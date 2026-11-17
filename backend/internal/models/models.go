@@ -34,6 +34,15 @@ type User struct {
 	// AuthUUID is the Supabase auth.users.id this row is provisioned from
 	// (empty for legacy rows that predate Supabase).
 	AuthUUID string
+	// Role is the pure-Go-auth RBAC role (admin/doctor/provider/patient)
+	// introduced by ADR-0001; backfilled from user_type by migration 0002.
+	Role string
+	// Status is the account state enforced by AuthRequired() (ADR-0001):
+	// "active", "pending", "suspended", "deactivated".
+	Status string
+	// PasswordHash holds the argon2id hash used by the new auth module;
+	// empty until the user first sets a password through it.
+	PasswordHash string
 }
 
 const userSelect = `SELECT id, username, email, password,
@@ -56,7 +65,10 @@ const userSelect = `SELECT id, username, email, password,
   COALESCE(is_active, 1),
   COALESCE(created_at, NOW()),
   COALESCE(updated_at, NOW()),
-  COALESCE(auth_uuid::text, '')
+  COALESCE(auth_uuid::text, ''),
+  COALESCE(role, 'patient'),
+  COALESCE(status, 'active'),
+  COALESCE(password_hash, '')
   FROM users WHERE `
 
 // GetUser returns the user with the given id, or (nil, nil) when not found.
@@ -68,7 +80,7 @@ func GetUser(ctx context.Context, db *database.DB, id int64) (*User, error) {
 		&u.DateOfBirth, &u.ProfileImage, &u.EmergencyContact, &u.EmergencyPhone,
 		&u.BloodGroup, &u.VerificationToken, &u.IsApproved, &u.IsEmailVerified,
 		&u.IsSuperuser, &u.IsStaff, &u.IsActive, &u.CreatedAt, &u.UpdatedAt,
-		&u.AuthUUID,
+		&u.AuthUUID, &u.Role, &u.Status, &u.PasswordHash,
 	)
 	if err != nil {
 		if err == database.ErrNoRows {
@@ -88,7 +100,7 @@ func GetUserByEmail(ctx context.Context, db *database.DB, email string) (*User, 
 		&u.DateOfBirth, &u.ProfileImage, &u.EmergencyContact, &u.EmergencyPhone,
 		&u.BloodGroup, &u.VerificationToken, &u.IsApproved, &u.IsEmailVerified,
 		&u.IsSuperuser, &u.IsStaff, &u.IsActive, &u.CreatedAt, &u.UpdatedAt,
-		&u.AuthUUID,
+		&u.AuthUUID, &u.Role, &u.Status, &u.PasswordHash,
 	)
 	if err != nil {
 		if err == database.ErrNoRows {
@@ -110,7 +122,7 @@ func GetUserByAuthUUID(ctx context.Context, db *database.DB, authUUID string) (*
 		&u.DateOfBirth, &u.ProfileImage, &u.EmergencyContact, &u.EmergencyPhone,
 		&u.BloodGroup, &u.VerificationToken, &u.IsApproved, &u.IsEmailVerified,
 		&u.IsSuperuser, &u.IsStaff, &u.IsActive, &u.CreatedAt, &u.UpdatedAt,
-		&u.AuthUUID,
+		&u.AuthUUID, &u.Role, &u.Status, &u.PasswordHash,
 	)
 	if err != nil {
 		if err == database.ErrNoRows {

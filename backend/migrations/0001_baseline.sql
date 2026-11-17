@@ -1,3 +1,14 @@
+-- 0001: baseline application schema.
+--
+-- This is the frozen copy of the embedded schema that database.Connect has
+-- applied on every boot since the Go rewrite. It is captured as a versioned
+-- migration so that startup no longer mutates the schema: new deployments run
+-- `go run ./cmd/migrate` once, and the server boots read-only.
+--
+-- Every statement is idempotent so the file can also be re-run against a
+-- database that already has the tables (the legacy `schema.sql` DDL-on-boot
+-- coexists with this migration during rollout).
+
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -26,9 +37,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Idempotent: add the Supabase auth link column + index even on databases
--- that predate it (CREATE TABLE IF NOT EXISTS is a no-op on an existing
--- table, so the column/index are managed here).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_uuid UUID;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_uuid ON users (auth_uuid);
 

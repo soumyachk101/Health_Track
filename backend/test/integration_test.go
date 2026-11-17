@@ -2,8 +2,9 @@
 
 // Package test holds the Postgres-backed integration suite for the
 // healthtrack backend. Run with `go test -tags integration ./test/...`
-// and INTEGRATION_DSN (or DATABASE_URL) pointing at a fresh database;
-// database.Connect bootstraps the embedded schema on connect.
+// and INTEGRATION_DSN (or DATABASE_URL) pointing at a fresh database.
+// Since the DDL-on-startup was removed (Phase 1), TestMain applies the
+// versioned migrations (database.Migrate) before running the suite.
 package test
 
 import (

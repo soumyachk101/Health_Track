@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"strings"
 	"time"
@@ -11,9 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-//go:embed schema.sql
-var schemaSQL string
 
 // ErrNoRows is returned by QueryRow when no rows are returned; it mirrors
 // pgx.ErrNoRows.
@@ -24,8 +20,10 @@ type DB struct {
 }
 
 // Connect opens a pgxpool connection to the given DSN (sslmode is read from
-// the connection string), pings it, and executes every statement in the
-// embedded schema sequentially.
+// the connection string) and pings it. It does NOT touch the schema: the
+// versioned migrations in backend/migrations are applied by
+// `go run ./cmd/migrate` before the server starts, so boot is read-only and
+// a fresh instance can never silently mutate production DDL.
 func Connect(ctx context.Context, url string) (*DB, error) {
 	if strings.TrimSpace(url) == "" {
 		return nil, errors.New("DATABASE_URL required")
@@ -47,13 +45,16 @@ func Connect(ctx context.Context, url string) (*DB, error) {
 		pool.Close()
 		return nil, err
 	}
-	for _, stmt := range splitStatements(schemaSQL) {
-		if _, err := pool.Exec(ctx, stmt); err != nil {
-			pool.Close()
-			return nil, err
+	return &DB{pool: pool}, nil
+}
+
+func isAllSpace(s string) bool {
+	for _, r := range s {
+		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
+			return false
 		}
 	}
-	return &DB{pool: pool}, nil
+	return true
 }
 
 // Exec runs a statement and returns the raw command tag.
