@@ -73,3 +73,26 @@ pause 60s then continue. Nobody commits or pushes — the human commits at the e
 - Pacing reminder: ~15 tool calls/min per CLI (shared 60 RPM). On any 429, pause ~60s.
 - next: CLI-4 runs the full gate LAST after CLI-1/2/3 post done entries; then human
   commits.
+
+## 2026-11-18 12:12 — MAIN — verified snapshot + fix-pass prompts (supersedes all earlier entries)
+- Verified GREEN (re-ran fresh, tree idle 5+ min): backend `go build` / `go vet` /
+  `go test -count=1 ./...` all pass (10 packages); frontend `npm test` 67/67,
+  `npx tsc --noEmit` clean, `npm run build` exit 0. Supabase refs in backend
+  (middleware/jwt.go, config, models, auth.go, router.go) are the INTENTIONAL
+  legacy read-only cutover path per ADR-0001 — not a defect.
+- Remaining defects (the ONLY things the fix pass should touch):
+  1. `internal/platform/cache/` has NO tests → rotation/replay->family-kill/
+     revocation not unit-asserted → CLI-1.
+  2. gofmt drift: files_v1.go, files_v1_test.go, storage.go, ai_test.go,
+     cmd/worker/handlers.go → CLI-2 (files/worker/storage) + CLI-1 (ai_test.go).
+  3. `backend/uploads/` still on disk (2 .gitkeep) and NOT in .gitignore (P2.4)
+     → CLI-2 decides (remove dir or gitignore; record choice).
+  4. Frontend AI-UI (emergency card, disclaimer, share_chart default-OFF) is
+     implemented in Chatbot.tsx but has ZERO test coverage → CLI-3 adds specs;
+     also verify "/files" nav item in nav-config.ts.
+  5. Integration suite unrun (needs disposable Postgres DSN) → whoever checks
+     records "not run" honestly; CLI-4 final gate.
+- Docs: `docs/PROGRESS.md` already ticked Phase 1 + Phase 3/5 by an earlier CLI-4
+  pass (22 [x]); verify its claims against this snapshot, don't re-tick blindly.
+- Action: 4 fix-pass prompts are in `docs/CLI_PROMPTS.md` (v2). Each CLI reads
+  THIS entry + its prompt, works its lane only, posts "fix lane done" here.
