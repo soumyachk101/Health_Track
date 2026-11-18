@@ -39,22 +39,23 @@ func BuildRouter(db *database.DB, cfg *config.Config, mail *email.Service) *gin.
 		c.JSON(http.StatusOK, gin.H{"message": "HealthTrack+ API Server is Running"})
 	})
 
+	// Pure Go auth module (ADR-0001): one shared service backs the
+	// /api/v1/auth cookie routes, the chatbot's AuthRequired + AI-quota
+	// gate, and (residual #8) the core + admin session gates — so
+	// revocation and spend limits hold across every surface.
+	authSvc, authV1Router := BuildAuthModule(db, cfg)
+
 	authAPI := r.Group("/accounts/api")
-	AuthRouter(authAPI, db, cfg, mail, prod)
+	AuthRouter(authAPI, db, cfg, mail, prod, authSvc)
 
 	coreAPI := r.Group("/api")
-	CoreRouter(coreAPI, db, cfg)
-
-	// Pure Go auth module (ADR-0001): one shared service backs both the
-	// /api/v1/auth cookie routes and the chatbot's AuthRequired + AI-quota
-	// gate, so revocation and spend limits hold across the two surfaces.
-	authSvc, authV1Router := BuildAuthModule(db, cfg)
+	CoreRouter(coreAPI, db, cfg, authSvc)
 
 	chatAPI := r.Group("/chatbot")
 	ChatbotRouter(chatAPI, cfg, authSvc)
 
 	adminAPI := r.Group("/admin-panel/api")
-	AdminRouter(adminAPI, db, cfg)
+	AdminRouter(adminAPI, db, cfg, authSvc)
 
 	// ADR-0002: private R2 files + background-job status. CLI 1 mounts
 	// /api/v1/auth/* on the same group prefix; the two mounts never clash
@@ -79,7 +80,7 @@ func BuildRouter(db *database.DB, cfg *config.Config, mail *email.Service) *gin.
 }
 
 // AuthRouter registers the /accounts/api auth routes.
-func AuthRouter(g gin.IRouter, db *database.DB, cfg *config.Config, mail *email.Service, prod *queue.Producer) {
+func AuthRouter(g gin.IRouter, db *database.DB, cfg *config.Config, mail *email.Service, prod *queue.Producer, authSvc *auth.Service) {
 	g.POST("/login", authLogin(db, cfg))
 	g.POST("/register", authRegister(db, cfg, mail, prod))
 	g.POST("/verify-otp", authVerifyOtp(db, cfg))
@@ -88,14 +89,16 @@ func AuthRouter(g gin.IRouter, db *database.DB, cfg *config.Config, mail *email.
 	g.POST("/reset-password", authResetPassword(db, cfg))
 	g.POST("/google-login", authGoogleLogin(db, cfg))
 	// Supabase onboarding: capture role/provider fields server-side after a
-	// Supabase sign-up. Idempotent; requires a verified auth token (via the
-	// same Supabase/JWKS or legacy HS256 path) but not email confirmation.
-	g.POST("/register-profile", middleware.JWTRequired(db, cfg), authRegisterProfile(db, cfg))
+	// Supabase sign-up. Idempotent; requires a verified session — the
+	// cookie session OR the legacy Bearer token (residual #8 gate).
+	g.POST("/register-profile", sessionGate(db, cfg, authSvc), authRegisterProfile(db, cfg))
 }
 
-// CoreRouter registers the /api routes.
-func CoreRouter(g gin.IRouter, db *database.DB, cfg *config.Config) {
-	jwt := middleware.JWTRequired(db, cfg)
+// CoreRouter registers the /api routes. The gate is cookie-OR-Bearer: the
+// cookie-only frontend authenticates with ht_access; the Bearer path stays
+// live for the cutover window (residual #8).
+func CoreRouter(g gin.IRouter, db *database.DB, cfg *config.Config, authSvc *auth.Service) {
+	jwt := sessionGate(db, cfg, authSvc)
 
 	g.GET("/dashboard", jwt, coreDashboard(db, cfg))
 	g.POST("/health-track/add", jwt, coreAddHealthRecord(db, cfg))
@@ -117,9 +120,10 @@ func CoreRouter(g gin.IRouter, db *database.DB, cfg *config.Config) {
 	g.POST("/service-requests/:request_id/action", jwt, coreServiceRequestAction(db, cfg))
 }
 
-// AdminRouter registers the /admin-panel/api routes.
-func AdminRouter(g gin.IRouter, db *database.DB, cfg *config.Config) {
-	admin := middleware.AdminRequired(db, cfg)
+// AdminRouter registers the /admin-panel/api routes. The gate is
+// cookie-OR-Bearer, plus the admin check on top (residual #8).
+func AdminRouter(g gin.IRouter, db *database.DB, cfg *config.Config, authSvc *auth.Service) {
+	admin := adminSessionGate(db, cfg, authSvc)
 
 	g.GET("/stats", admin, adminStats(db))
 	g.GET("/users", admin, adminUsers(db))
