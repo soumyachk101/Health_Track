@@ -96,3 +96,23 @@ pause 60s then continue. Nobody commits or pushes — the human commits at the e
   pass (22 [x]); verify its claims against this snapshot, don't re-tick blindly.
 - Action: 4 fix-pass prompts are in `docs/CLI_PROMPTS.md` (v2). Each CLI reads
   THIS entry + its prompt, works its lane only, posts "fix lane done" here.
+
+## 2026-11-18 13:05 — MAIN — wave-4 snapshot (branch queue-chatbot-and-otp-mailer; supersedes all earlier entries)
+- Verified GREEN on idle tree: backend `go build`/`go vet`/`go test -count=1`
+  pass; frontend 67/67 + `npm run build` pass.
+- Branch context: PR #3 (session_gate cookie-OR-Bearer gate) merged; OTP
+  mailer is already queue-wired in auth.go (`queue.DispatchMail`). The chatbot
+  still blocks the HTTP request on `ai.ChatWithInstruction` (chatbot.go:106) —
+  that is this branch's core lane.
+- Still OPEN from the wave-3 fix pass (all five): cache_test.go missing; gofmt
+  drift on 5 files (files_v1.go, files_v1_test.go, storage.go, ai_test.go,
+  cmd/worker/handlers.go); backend/uploads not gitignored; chatbot/AI-UI test
+  specs missing; integration suite unrun (no DSN).
+- Lane map for wave-4 (docs/CLI_PROMPTS_WAVE4.md): CLI A = chat-queue backend
+  (tasks.go TypeChat + worker handler + chatbot 202 job_id + jobs_v1 result
+  field); CLI B = backend fix-pass (cache tests, gofmt ×4, uploads decision,
+  DSN note); CLI C = frontend chat-poll UI + AI-UI specs + /files nav;
+  CLI D = cross-stack gate + gstack /verify + /ship (commit + PR, no deploy).
+- Pacing: ~15 tool calls/min each (shared 60 RPM). gstack skills: every CLI
+  runs /verify at lane end; CLI D runs /ship (stop after PR). No other gstack
+  skills. CLIs A/B/C leave work uncommitted; CLI D ships it.
