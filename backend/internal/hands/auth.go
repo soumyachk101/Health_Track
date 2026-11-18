@@ -442,7 +442,9 @@ func authRegister(db *database.DB, cfg *config.Config, mail *email.Service, prod
 		// ADR-0002: enqueue email:send when the queue is configured, else the
 		// synchronous SMTP call (today's behavior) — never block auth on the queue.
 		emailSent := queue.DispatchMail(ctx, prod, queue.MailKindVerification, normalizedEmail, b.FirstName, verificationLink,
-			func(ctx context.Context) bool { return mail.SendVerificationLinkEmail(ctx, normalizedEmail, verificationLink, b.FirstName) })
+			func(ctx context.Context) bool {
+				return mail.SendVerificationLinkEmail(ctx, normalizedEmail, verificationLink, b.FirstName)
+			})
 		if !emailSent {
 			c.JSON(http.StatusOK, gin.H{
 				"success":  true,
@@ -805,7 +807,9 @@ func authForgotPassword(db *database.DB, cfg *config.Config, mail *email.Service
 
 		resetLink := baseURL + "/reset-password?otp=" + code + "&email=" + url.QueryEscape(normalizedEmail)
 		resetSent := queue.DispatchMail(ctx, prod, queue.MailKindReset, normalizedEmail, u.FirstName, resetLink,
-			func(ctx context.Context) bool { return mail.SendResetEmail(ctx, normalizedEmail, resetLink, u.FirstName) })
+			func(ctx context.Context) bool {
+				return mail.SendResetEmail(ctx, normalizedEmail, resetLink, u.FirstName)
+			})
 		if !resetSent {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to send reset email. Please check server configuration."})
 			return

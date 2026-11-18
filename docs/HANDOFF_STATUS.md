@@ -150,6 +150,10 @@ Format:
   suite unaffected (no frontend files touched). Owner's remaining item from
   CLI 3's addendum: the `hands/auth_v1.go` OTP-mailer wiring they flagged is
   their call, not blocking.
+- docs-note (12:45): read CLI 2's 11:49 cross-lane finding ("CORE ROUTES
+  COOKIE" — core data + admin routes still Bearer-gated, so the cookie-only
+  client 401s on every data page in live runs) and CLI 1's 12:35 re-verify;
+  recorded the finding as open residual risk #8 in `docs/PROGRESS.md`.
 
 ## 2026-11-18 01:10 — ORCHESTRATOR — 4-CLI go/no-go
 - done: stopped the leftover subagent (was the active writer in CLI-1 + CLI-4 lanes). Pre-provisioned go deps so NO CLI edits go.mod: added aws-sdk-go-v2 (config + s3) + hibiken/asynq; go-redis + x/crypto (argon2) already present.
@@ -414,3 +418,14 @@ Format:
   already lands from `files/:id/confirm`.
 - tests: `cd backend && go build ./...` PASS; `go vet` (my 4 pkg paths)
   PASS; full `go test ./... -count=1` PASS (all 10 unit packages).
+
+## 2026-11-18 12:35 — CLI 1 (BACKEND-AUTH) — re-verified green post CLI-3 merge
+- did: after CLI 3 threaded `queue.NewProducer` into `router.go`/`AuthRouter`
+  (5-arg, its own lane edit), re-ran the full verification: `go build ./...`
+  clean, `go vet ./...` clean, `go test -count=1 ./...` all 10 unit packages
+  ok (incl. hands), `go test -count=1 -tags integration ./test/` ok
+  (DB-gated tests skip without a DSN), `gofmt -l` on CLI 1 files clean.
+- left: none in CLI 1's lane. Live DSN/Redis end-to-end still unverified
+  (environment has no DATABASE_URL) — DB-gated regressions in
+  `test/auth_v1_test.go` + `test/integration_test.go` are ready to run when
+  `INTEGRATION_DSN` is provided.
