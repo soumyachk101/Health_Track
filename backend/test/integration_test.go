@@ -176,7 +176,7 @@ func registerPatient(s *srv, t *testing.T, username, emailAddr string) string {
 	code, body := s.postJSON(t, "/accounts/api/register", "", map[string]any{
 		"username":   username,
 		"email":      emailAddr,
-		"password":   "Passw0rd!",
+		"password":   "test-pass-0001",
 		"first_name": "It",
 		"last_name":  "User",
 		"role":       "patient",
@@ -202,7 +202,7 @@ func registerPatient(s *srv, t *testing.T, username, emailAddr string) string {
 	if _, err := testDB.Exec(ctx, "UPDATE users SET is_email_verified = 1 WHERE email = $1", emailAddr); err != nil {
 		t.Fatalf("mark verified: %v", err)
 	}
-	lc, lb := s.postJSON(t, "/accounts/api/login", "", map[string]any{"username": username, "password": "Passw0rd!"})
+	lc, lb := s.postJSON(t, "/accounts/api/login", "", map[string]any{"username": username, "password": "test-pass-0001"})
 	if lc != http.StatusOK || lb["success"] != true {
 		t.Fatalf("login after verify: got %d %v", lc, lb)
 	}
@@ -323,7 +323,7 @@ func TestRegisterLoginProtectedFlow(t *testing.T) {
 	code, body := s.postJSON(t, "/accounts/api/register", "", map[string]any{
 		"username":   "it_user_" + fmt.Sprint(stamp),
 		"email":      emailAddr,
-		"password":   "Passw0rd!",
+		"password":   "test-pass-0001",
 		"first_name": "It",
 		"last_name":  "User",
 		"role":       "patient",
@@ -356,7 +356,7 @@ func TestRegisterLoginProtectedFlow(t *testing.T) {
 
 	lc, lb := s.postJSON(t, "/accounts/api/login", "", map[string]any{
 		"username": "it_user_" + fmt.Sprint(stamp),
-		"password": "Passw0rd!",
+		"password": "test-pass-0001",
 	})
 	if lc != http.StatusOK || lb["success"] != true {
 		t.Fatalf("login: got %d %v", lc, lb)
@@ -411,7 +411,7 @@ func TestRegisterLoginProtectedFlow(t *testing.T) {
 	code, body = s.postJSON(t, "/accounts/api/register", "", map[string]any{
 		"username": "it_unverified_" + fmt.Sprint(stamp),
 		"email":    unvEmail,
-		"password": "Passw0rd!",
+		"password": "test-pass-0001",
 		"role":     "patient",
 	})
 	if code != http.StatusOK || body["success"] != true {
@@ -419,7 +419,7 @@ func TestRegisterLoginProtectedFlow(t *testing.T) {
 	}
 	code, body = s.postJSON(t, "/accounts/api/login", "", map[string]any{
 		"username": "it_unverified_" + fmt.Sprint(stamp),
-		"password": "Passw0rd!",
+		"password": "test-pass-0001",
 	})
 	if code != http.StatusForbidden {
 		t.Fatalf("unverified login: got %d %v", code, body)
@@ -510,7 +510,7 @@ func TestProtectedCoreState(t *testing.T) {
 	code, body = s.postJSON(t, "/accounts/api/register", "", map[string]any{
 		"username":      pharmName,
 		"email":         pharmEmail,
-		"password":      "Passw0rd!",
+		"password":      "test-pass-0001",
 		"role":          "provider",
 		"provider_type": "pharmacy",
 		"business_name": "ItPharm",
@@ -521,7 +521,7 @@ func TestProtectedCoreState(t *testing.T) {
 	if _, err := testDB.Exec(ctx, "UPDATE users SET is_email_verified = 1 WHERE email = $1", pharmEmail); err != nil {
 		t.Fatalf("mark pharm verified: %v", err)
 	}
-	lc, lb := s.postJSON(t, "/accounts/api/login", "", map[string]any{"username": pharmName, "password": "Passw0rd!"})
+	lc, lb := s.postJSON(t, "/accounts/api/login", "", map[string]any{"username": pharmName, "password": "test-pass-0001"})
 	if lc != http.StatusOK || lb["success"] != true {
 		t.Fatalf("pharmacy login: got %d %v", lc, lb)
 	}
@@ -714,7 +714,7 @@ func TestOTPFlow(t *testing.T) {
 		t.Fatalf("login with new password: got %d %v", code, body)
 	}
 	// One recorded failure for this identifier (below the 5/5min cap).
-	code, body = s.postJSON(t, "/accounts/api/login", "", map[string]any{"username": emailAddr, "password": "Passw0rd!"})
+	code, body = s.postJSON(t, "/accounts/api/login", "", map[string]any{"username": emailAddr, "password": "test-pass-0001"})
 	if code != http.StatusUnauthorized || body["success"] != false {
 		t.Fatalf("login with old password: got %d %v, want 401", code, body)
 	}
@@ -751,7 +751,7 @@ func TestChatbotConfigErrors(t *testing.T) {
 
 	var cookies []string
 	cookieReq, _ := http.NewRequest(http.MethodPost, s.URL+"/api/v1/auth/login",
-		bytes.NewReader([]byte(`{"username":"`+username+`","password":"Passw0rd!"}`)))
+		bytes.NewReader([]byte(`{"username":"`+username+`","password":"test-pass-0001"}`)))
 	cookieReq.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(cookieReq)
 	if err != nil {

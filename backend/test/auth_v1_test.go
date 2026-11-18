@@ -91,7 +91,7 @@ func TestAuthV1AccountStateGating(t *testing.T) {
 	username := "it_authgate_" + fmt.Sprint(stamp)
 	emailAddr := username + "@x.test"
 	registerPatient(s, t, username, emailAddr)
-	cookies := moduleLogin(t, s, username, "Passw0rd!")
+	cookies := moduleLogin(t, s, username, "test-pass-0001")
 
 	// Active: the session gate passes.
 	code, body := getAuthed(t, s, "/api/v1/auth/session", cookies)
