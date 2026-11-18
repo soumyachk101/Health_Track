@@ -47,6 +47,11 @@ func scanJobRow(row map[string]any) (*JobRecord, error) {
 	if v, ok := row["last_error"].(string); ok {
 		rec.LastError = v
 	}
+	// result is JSONB: pgx returns it as []byte (nil when the column is
+	// NULL, which stays the zero value "").
+	if v, ok := row["result"].([]byte); ok {
+		rec.Result = string(v)
+	}
 	if v, ok := row["enqueued_at"].(time.Time); ok {
 		rec.EnqueuedAt = v
 	}

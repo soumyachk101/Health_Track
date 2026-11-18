@@ -52,9 +52,9 @@ var MIMEExt = map[string]string{
 // ObjectInfo is the HeadObject summary the confirm flow verifies against
 // the medical_files row.
 type ObjectInfo struct {
-	Key         string
-	Size        int64
-	ContentType string
+	Key          string
+	Size         int64
+	ContentType  string
 	LastModified time.Time
 }
 
@@ -85,10 +85,10 @@ type ObjectStorage interface {
 // R2 edge, not the AWS global endpoint, so the client must use a custom
 // endpoint resolver (see NewS3Store).
 type R2Config struct {
-	AccountID         string
-	Bucket            string
-	AccessKeyID       string
-	SecretAccessKey   string
+	AccountID       string
+	Bucket          string
+	AccessKeyID     string
+	SecretAccessKey string
 	// Endpoint overrides the derived https://<account>.r2.cloudflarestorage.com
 	// URL (tests, R2-compatible gateways).
 	Endpoint string

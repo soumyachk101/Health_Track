@@ -5,8 +5,7 @@ data/
 main
 .DS_Store
 
-# Ignore uploaded file contents, keep the directory placeholders
-uploads/prescriptions/*
-uploads/insurance/*
-!uploads/prescriptions/.gitkeep
-!uploads/insurance/.gitkeep
+# P2.4: uploads/ no longer exists on disk — R2 is the object store and the
+# public /uploads mount is gone. Ignore any local uploads/ dir that a dev
+# might recreate so stray file content can never be committed.
+uploads/

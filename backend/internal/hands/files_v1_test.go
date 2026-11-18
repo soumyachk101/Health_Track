@@ -66,15 +66,15 @@ func TestFilesValidateUploadMeta(t *testing.T) {
 		ok   bool
 	}{
 		{"application/pdf", 1024, true},
-		{"image/png", 25 << 20, true},        // exactly the cap
+		{"image/png", 25 << 20, true}, // exactly the cap
 		{"image/jpeg", 1, true},
 		{"image/webp", 1 << 20, true},
-		{"image/png", 25<<20 + 1, false},     // one byte over the cap
-		{"image/gif", 100, false},            // gif is not an allowlist entry
-		{"application/zip", 100, false},      // archives carry binaries
-		{"image/svg+xml", 100, false},        // SVG can script the browser
+		{"image/png", 25<<20 + 1, false}, // one byte over the cap
+		{"image/gif", 100, false},        // gif is not an allowlist entry
+		{"application/zip", 100, false},  // archives carry binaries
+		{"image/svg+xml", 100, false},    // SVG can script the browser
 		{"text/plain", 100, false},
-		{"application/pdf", 0, false},        // zero bytes is not an upload
+		{"application/pdf", 0, false}, // zero bytes is not an upload
 		{"application/pdf", -1, false},
 	}
 	for i, c := range cases {

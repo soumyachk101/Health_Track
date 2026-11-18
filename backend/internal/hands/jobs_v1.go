@@ -8,6 +8,7 @@
 package hands
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -68,7 +69,7 @@ func writeJobResponse(c *gin.Context, user *models.User, row *queue.JobRecord) {
 	if status == queue.JobDead {
 		status = queue.JobFailed
 	}
-	c.JSON(http.StatusOK, gin.H{
+	out := gin.H{
 		"success":    true,
 		"id":         row.TaskID,
 		"type":       row.Type,
@@ -76,5 +77,15 @@ func writeJobResponse(c *gin.Context, user *models.User, row *queue.JobRecord) {
 		"attempts":   row.Attempts,
 		"last_error": row.LastError,
 		"updated_at": row.UpdatedAt,
-	})
+	}
+	// result: the parsed JSON the worker stored (e.g. {"response": "..."}
+	// for ai:chat, {"audio": "..."} for ai:tts). Absent when the task has
+	// not completed — that is what "result?" in the pinned contract means.
+	if row.Result != "" {
+		var v any
+		if err := json.Unmarshal([]byte(row.Result), &v); err == nil {
+			out["result"] = v
+		}
+	}
+	c.JSON(http.StatusOK, out)
 }

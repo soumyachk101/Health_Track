@@ -1,14 +1,18 @@
-// chatbot.go — the /chatbot AI surface (finding S3). Both routes run
-// behind the auth module's AuthRequired + a per-user AI quota; the emergency
-// branch is answered BEFORE any model call; the general-assistant instruction
-// replaces the legacy "medical assistant" prompt; chart data reaches the
-// model only when the client explicitly opts in (share_chart:true).
+// chatbot.go — the /chatbot AI surface (finding S3, ADR-0002 step 4). Both
+// routes run behind the auth module's AuthRequired + a per-user AI quota; the
+// emergency branch is answered synchronously BEFORE any model call and is
+// NEVER enqueued. POST /chatbot/api offloads the model call to the ai:chat
+// queue task when the producer is configured (202 + job_id for polling), and
+// degrades to an inline call (200 + response) when REDIS_URL is unset, so
+// the app stays deployable without Redis. TTS stays synchronous for now —
+// known limitation, recorded on the handoff board.
 //
-// [INPUT] depends on services/ai (chat chain + guard) and modules/auth
-// (AuthRequired via the router + CheckAIQuota + CurrentUser);
+// [INPUT] depends on services/ai (chat chain + guard), modules/auth
+// (AuthRequired via the router + CheckAIQuota + CurrentUser), and the queue
+// producer (NewAiChatTask + Enqueue);
 // [OUTPUT] provides chatbotAPI / chatbotTTS gin handlers;
 // [POS] the AI endpoint handlers of hands — policy lives in ai.guard, the
-// gate + quota live in the auth module, this file only binds and dispatches;
+// gate + quota live in the auth module, offload-vs-inline lives here;
 // [PROTOCOL] Update this header on change, then check CLAUDE.md
 package hands
 
@@ -18,9 +22,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"healthtrack/internal/config"
 	"healthtrack/internal/modules/auth"
+	"healthtrack/internal/platform/queue"
 	"healthtrack/internal/services/ai"
 )
 
@@ -47,7 +53,7 @@ type chatRequest struct {
 	Chart      any    `json:"chart"`
 }
 
-func chatbotAPI(cfg *config.Config, authSvc *auth.Service) gin.HandlerFunc {
+func chatbotAPI(cfg *config.Config, authSvc *auth.Service, prod *queue.Producer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
@@ -69,8 +75,8 @@ func chatbotAPI(cfg *config.Config, authSvc *auth.Service) gin.HandlerFunc {
 		}
 
 		// Emergency intent is handled BEFORE any model call and BEFORE the
-		// quota: a safety reply must never be throttled or routed through a
-		// provider that might diagnose.
+		// quota: a safety reply must never be throttled, enqueued, or routed
+		// through a provider that might diagnose.
 		if ai.IsEmergencyIntent(b.Message) {
 			c.JSON(http.StatusOK, gin.H{"response": ai.EmergencyReply(), "emergency": true})
 			return
@@ -91,19 +97,53 @@ func chatbotAPI(cfg *config.Config, authSvc *auth.Service) gin.HandlerFunc {
 		}
 
 		// Chart context is included only on explicit opt-in, and only a
-		// bounded slice of it. Default: none.
-		prompt := b.Message
+		// bounded slice of it (the cap is applied HERE, so the queued payload
+		// carries a bounded block the worker can use as-is).
+		var chartBlock string
 		if b.ShareChart && b.Chart != nil {
 			if block, _ := json.Marshal(b.Chart); len(block) > 0 {
 				if len(block) > chartBlockCap {
 					block = block[:chartBlockCap]
 				}
-				prompt = "Health data the user chose to share (do not diagnose; give general information only):\n" +
-					string(block) + "\n\nQuestion:\n" + b.Message
+				chartBlock = string(block)
+			}
+		}
+		payload := queue.AiChatPayload{
+			Message:     b.Message,
+			ShareChart:  b.ShareChart,
+			Chart:       chartBlock,
+			Instruction: ai.AssistantInstruction,
+		}
+
+		// ADR-0002 step 4: off the HTTP path when the queue is configured.
+		// Emergency replies never reach here (above), so the queue only ever
+		// carries ordinary chat work. The enqueuer's user id is the job owner
+		// (the /jobs/:id gate reads it); 0 when no verified user (system).
+		var owner int64
+		if u != nil {
+			owner = u.ID
+		}
+		if prod != nil && prod.Configured() {
+			key := queue.IdempotencyKey(queue.TypeAiChat, uuid.NewString())
+			task, opts := queue.NewAiChatTask(key, payload)
+			job, err := prod.Enqueue(ctx, task, key, owner, opts...)
+			if err != nil {
+				// A Redis/ledger blip must not break the chat surface: fall
+				// through to the synchronous path below.
+			} else {
+				c.JSON(http.StatusAccepted, gin.H{
+					"success": true,
+					"job_id":  job.TaskID,
+				})
+				return
 			}
 		}
 
-		text, err := ai.ChatWithInstruction(ctx, cfg, prompt, ai.AssistantInstruction)
+		// Degrade mode (REDIS_URL unset, or an enqueue failure): run the
+		// model call inline, exactly like the pre-queue behavior. The prompt
+		// is rebuilt through the same queue.BuildChatPrompt the worker uses,
+		// so inline and queued replies reach the model identically.
+		text, err := ai.ChatWithInstruction(ctx, cfg, queue.BuildChatPrompt(payload), ai.AssistantInstruction)
 		if err != nil {
 			if missingKey(err, "no-api-key") {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Server configuration error: API key missing"})
@@ -112,7 +152,7 @@ func chatbotAPI(cfg *config.Config, authSvc *auth.Service) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Chat service error. Please try again later."})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"response": text})
+		c.JSON(http.StatusOK, gin.H{"success": true, "response": text})
 	}
 }
 

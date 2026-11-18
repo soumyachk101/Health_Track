@@ -8,6 +8,7 @@
 package queue
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -19,6 +20,8 @@ import (
 const (
 	TypeEmailSend        = "email:send"
 	TypeAnalyzeDocument  = "ai:analyze_document"
+	TypeAiChat           = "ai:chat"
+	TypeAiTTS            = "ai:tts"
 	TypeCleanupStaleFile = "files:cleanup_stale"
 )
 
@@ -77,6 +80,45 @@ type AnalyzeDocumentPayload struct {
 // of pending uploads older than the threshold).
 type CleanupStalePayload struct{}
 
+// AiChatPayload is the ai:chat task body (pinned contract: message,
+// share_chart, instruction). It carries the raw inputs, not a pre-built
+// prompt, so both the inline degrade path and the worker rebuild the prompt
+// through [BuildChatPrompt] and produce byte-identical model input.
+//
+// Chart holds the already-bounded chart JSON block ("" when the caller did
+// not opt in, or when there is none): the handler truncates it to the cap
+// before enqueuing, so the worker never re-implements the bound. The user
+// message + chart are personal data: they stay in Redis for the worker, and
+// the audit ledger row stores `{}` for ai tasks (same PII guard as
+// email:send — see producer.insertJobRow). The result (model text) is stored
+// on the row's result JSONB for /jobs/:id polling.
+type AiChatPayload struct {
+	Message     string `json:"message"`
+	ShareChart  bool   `json:"share_chart"`
+	Chart       string `json:"chart,omitempty"` // bounded chart block, "" unless opted in
+	Instruction string `json:"instruction"`
+}
+
+// BuildChatPrompt assembles the final model prompt from an [AiChatPayload]:
+// the user message, plus a bounded chart block ONLY when the user opted in
+// (share_chart && chart != ""). This is the single source of truth shared by
+// the synchronous degrade path (chatbot handler) and the async worker, so a
+// queued reply and an inline reply reach the model with identical input.
+func BuildChatPrompt(p AiChatPayload) string {
+	if p.ShareChart && p.Chart != "" {
+		return "Health data the user chose to share (do not diagnose; give general information only):\n" +
+			p.Chart + "\n\nQuestion:\n" + p.Message
+	}
+	return p.Message
+}
+
+// AiTTSPayload is the ai:tts task body: the text to synthesize + the
+// enqueuing user. Same PII treatment as AiChatPayload.
+type AiTTSPayload struct {
+	UserID int64  `json:"user_id"`
+	Text   string `json:"text"`
+}
+
 // taskOptions is the pinned per-type policy: dedicated queue + retry
 // ceiling + timeouts.
 func taskOptions(taskType string) []asynq.Option {
@@ -84,14 +126,14 @@ func taskOptions(taskType string) []asynq.Option {
 	switch taskType {
 	case TypeEmailSend:
 		queue = QueueEmail
-	case TypeAnalyzeDocument:
+	case TypeAnalyzeDocument, TypeAiChat, TypeAiTTS:
 		queue = QueueAI
 	}
 	opts := []asynq.Option{asynq.Queue(queue), asynq.MaxRetry(MaxRetries)}
 	switch taskType {
 	case TypeEmailSend:
 		opts = append(opts, asynq.Timeout(2*time.Minute))
-	case TypeAnalyzeDocument:
+	case TypeAnalyzeDocument, TypeAiChat, TypeAiTTS:
 		opts = append(opts, asynq.Timeout(5*time.Minute))
 	}
 	return opts
@@ -112,6 +154,21 @@ func NewAnalyzeDocumentTask(p AnalyzeDocumentPayload) (*asynq.Task, []asynq.Opti
 	return asynq.NewTask(TypeAnalyzeDocument, payload), append([]asynq.Option{id}, taskOptions(TypeAnalyzeDocument)...)
 }
 
+// NewAiChatTask builds an ai:chat task. Each request is its own logical
+// job (no dedupe on the prompt: repeated questions must re-run), so the
+// caller supplies a fresh-uuid key: it is the asynq TaskID AND the
+// /jobs/:id the caller polls.
+func NewAiChatTask(key string, p AiChatPayload) (*asynq.Task, []asynq.Option) {
+	payload, _ := json.Marshal(p)
+	return asynq.NewTask(TypeAiChat, payload), append([]asynq.Option{asynq.TaskID(key)}, taskOptions(TypeAiChat)...)
+}
+
+// NewAiTTSTask builds an ai:tts task (fresh-uuid key, same contract).
+func NewAiTTSTask(key string, p AiTTSPayload) (*asynq.Task, []asynq.Option) {
+	payload, _ := json.Marshal(p)
+	return asynq.NewTask(TypeAiTTS, payload), append([]asynq.Option{asynq.TaskID(key)}, taskOptions(TypeAiTTS)...)
+}
+
 // NewCleanupStaleTask builds one files:cleanup_stale task plus its options
 // (the periodic scheduler adds a run-timestamp TaskID so overlapping runs
 // don't dedupe against each other).
@@ -123,6 +180,22 @@ func NewCleanupStaleTask() (*asynq.Task, []asynq.Option) {
 // IdempotencyKey is the pinned <type>:<uuid-or-file-id> string: it is both
 // the asynq task id and the background_jobs.idempotency_key.
 func IdempotencyKey(taskType, id string) string { return taskType + ":" + id }
+
+// TestPusher is an exported push function type (the redisPusher seam is
+// unexported, so external test packages cannot name it). SetPusherForTest
+// swaps a Producer's pusher for one recorded in memory, letting the HTTP
+// 202/enqueue contract be tested without a live Redis.
+type TestPusher func(ctx context.Context, task *asynq.Task, opts ...asynq.Option) error
+
+// SetPusherForTest replaces p's pusher (and marks it configured) with a
+// TestPusher-backed one. Test-only: production code uses NewProducer.
+func SetPusherForTest(p *Producer, f TestPusher) { p.pusher = testPusherFunc(f) }
+
+type testPusherFunc TestPusher
+
+func (t testPusherFunc) Push(ctx context.Context, task *asynq.Task, opts ...asynq.Option) error {
+	return t(ctx, task, opts...)
+}
 
 // RetryOutcome is the pure dead-letter decision: a failed task that has
 // already consumed maxRetries retries goes to the asynq retry-archive
