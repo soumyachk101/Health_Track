@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RouteGuard } from "@/components/guards/RouteGuard";
 
 // Patient dashboard: authenticated-only content, never indexed.
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardLayoutMeta({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <RouteGuard requiredRole="patient">
+      {children}
+    </RouteGuard>
+  );
 }

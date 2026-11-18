@@ -32,6 +32,35 @@ type Config struct {
 	// SUPABASE_URL is the Supabase project URL; the expected token issuer is
 	// SUPABASE_URL + "/auth/v1".
 	SupabaseURL string
+
+	// --- Pure Go Auth (ADR-0001) ---
+	// REDIS_URL backs the auth module: opaque refresh-token rotation
+	// (hashed, Lua-rotated) and the user:revoked_before:<id> instant
+	// revocation marker. Empty means the module falls back to an in-memory
+	// store (single instance, dev only).
+	RedisURL string
+	// AUTH_COOKIE_DOMAIN sets the Domain attribute of the ht_access /
+	// ht_refresh cookies. Set it to the shared parent domain in production
+	// (e.g. "healthtrack.plus") so cookies work across app.* and api.*
+	// subdomains. Empty means the cookie is host-only.
+	AuthCookieDomain string
+	// AuthInsecureCookies disables the Secure attribute so the cookie
+	// session works over plain http://localhost in development. Production
+	// deployments leave this unset (Secure is always on).
+	AuthInsecureCookies bool
+	// AuthCookieEnabled is the ADR-0001 feature flag: when false, the new
+	// /api/v1/auth cookie routes are not mounted and legacy paths serve
+	// everything (rollout step 1 of the ADR; rollback = set this to false).
+	AuthCookieEnabled bool
+
+	// --- Schema bootstrap (finding P2.3) ---
+	// DB_MIGRATE_ON_BOOT. When false (the default), database.Connect is
+	// read-only: the versioned migrations are applied out-of-band by
+	// `go run ./cmd/migrate` before the server starts, so a fresh instance can
+	// never silently mutate production DDL. When true (the integration test
+	// harness, and any deployment that wants boot-time bootstrap), Connect
+	// runs database.Migrate right after connecting.
+	MigrateOnBoot bool
 }
 
 func Load() *Config {
@@ -75,6 +104,19 @@ func Load() *Config {
 	cfg.SupabaseJWKSURL = strings.TrimSpace(os.Getenv("SUPABASE_JWKS_URL"))
 	cfg.SupabaseURL = strings.TrimSpace(os.Getenv("SUPABASE_URL"))
 
+	// Pure Go Auth (ADR-0001): REDIS_URL + cookie posture. The feature flag
+	// defaults on, so a fresh deployment gets the cookie path; rolling back
+	// to legacy-only is AUTH_COOKIE_ENABLED=false.
+	cfg.RedisURL = strings.TrimSpace(os.Getenv("REDIS_URL"))
+	cfg.AuthCookieDomain = strings.TrimSpace(os.Getenv("AUTH_COOKIE_DOMAIN"))
+	cfg.AuthInsecureCookies = strings.EqualFold(os.Getenv("AUTH_INSECURE_COOKIES"), "true")
+	cfg.AuthCookieEnabled = envBool("AUTH_COOKIE_ENABLED", true)
+
+	// Schema bootstrap (finding P2.3): default read-only boot. The versioned
+	// runner is out-of-band (`go run ./cmd/migrate`); set DB_MIGRATE_ON_BOOT
+	// only where boot-time bootstrap is wanted (integration test harness).
+	cfg.MigrateOnBoot = envBool("DB_MIGRATE_ON_BOOT", false)
+
 	if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); strings.TrimSpace(origins) != "" {
 		var parts []string
 		for _, o := range strings.Split(origins, ",") {
@@ -106,4 +148,13 @@ func envDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envBool reads a boolean env var; an unset value returns def.
+func envBool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	return strings.EqualFold(v, "true") || v == "1"
 }

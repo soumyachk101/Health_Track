@@ -1,9 +1,19 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, Sparkles, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { X, Send, Sparkles, Mic, MicOff, Volume2, VolumeX, Siren, LogIn, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getApiUrl } from '@/lib/api';
+import { apiFetch, ApiError } from '@/lib/api';
+import { useAuth } from '@/components/Providers';
+
+// Pinned AI-chat contract (CLI_ORCHESTRATION.md): 8 KB message cap (matches
+// the backend), `share_chart` is the opt-in flag — default OFF.
+const MAX_MESSAGE_LENGTH = 8000; // ~8 KB of UTF-8 text
+
+// Emergency intent is surfaced BEFORE any model call (ADR: 112/108 copy,
+// non-diagnostic). A local keyword match mirrors the server-side branch so
+// the UI can render the emergency card immediately for the user's message.
+const EMERGENCY_RE = /\b(911|112|108|emergency|suicid\w*|self[- ]?harm|hurt myself|overdose|call (the )?(ambulance|doctor)s now)\b/i;
 
 interface SpeechRecognitionConstructor {
     new(): SpeechRecognition;
@@ -40,6 +50,8 @@ type Message = {
     sender: 'user' | 'bot';
     text: string;
     timestamp: Date;
+    // Emergency flag: render the emergency card instead of the normal bubble.
+    emergency?: boolean;
 };
 
 const Chatbot: React.FC = () => {
@@ -58,6 +70,10 @@ const Chatbot: React.FC = () => {
     const [voiceEnabled, setVoiceEnabled] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [chatError, setChatError] = useState<string | null>(null);
+    // Opt-in flag per the AI-chat contract: when ON the assistant may use the
+    // user's chart data; default OFF so the model gets a general assistant.
+    const [shareChart, setShareChart] = useState(false);
+    const { isAuthenticated } = useAuth();
     const audioRef = useRef<HTMLAudioElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -192,11 +208,18 @@ const Chatbot: React.FC = () => {
 
     const handleSend = async () => {
         if (!input.trim()) return;
+        // Enforce the same 8 KB cap as the backend so a rejected message never
+        // reaches the wire; the UI also blocks the send button above the cap.
+        const text = input.slice(0, MAX_MESSAGE_LENGTH).trim();
+        if (text.length >= MAX_MESSAGE_LENGTH) {
+            setChatError(`Messages are capped at ${MAX_MESSAGE_LENGTH} characters. Please shorten your message.`);
+            return;
+        }
 
         const userMessage: Message = {
             id: Date.now().toString(),
             sender: 'user',
-            text: input,
+            text,
             timestamp: new Date(),
         };
 
@@ -204,31 +227,29 @@ const Chatbot: React.FC = () => {
         setInput('');
         setIsLoading(true);
 
+        // Emergency intent is surfaced immediately (non-diagnostic). The server
+        // runs the same branch BEFORE any model call; this local check just
+        // shows the card without waiting on the model round-trip.
+        const emergencyDetected = EMERGENCY_RE.test(text);
+
         try {
             setChatError(null);
-            const response = await fetch(getApiUrl("/chatbot/api"), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userMessage.text }),
-            });
-
-            if (!response.ok) {
-                let serverError = 'Server error';
-                try {
-                    const errData = await response.json();
-                    if (errData.error) serverError = errData.error;
-                } catch {
-                    // keep default
+            const data = await apiFetch<{ response?: string; emergency?: boolean; response_emergency?: boolean }>(
+                "/chatbot/api",
+                {
+                    method: 'POST',
+                    body: { message: text, share_chart: shareChart },
                 }
-                throw new Error(serverError);
-            }
-
-            const data = await response.json();
+            );
+            // The server may also flag an emergency even when the local
+            // keyword check missed it; honor whichever fired.
+            const emergency = emergencyDetected || Boolean(data.emergency ?? data.response_emergency);
             const botMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: 'bot',
                 text: data.response || "I didn't quite catch that.",
                 timestamp: new Date(),
+                emergency,
             };
 
             setMessages((prev) => [...prev, botMessage]);
@@ -240,25 +261,19 @@ const Chatbot: React.FC = () => {
             if (voiceEnabled) {
                 let ttsFailed = false;
                 try {
-                    const ttsRes = await fetch(getApiUrl("/chatbot/api/tts"), {
+                    const ttsData = await apiFetch<{ audio?: string }>("/chatbot/api/tts", {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text: botMessage.text }),
+                        body: { text: botMessage.text },
                     });
-                    if (ttsRes.ok) {
-                        const ttsData = await ttsRes.json();
-                        if (ttsData.audio) {
-                            const audio = audioRef.current;
-                            if (!audio) throw new Error('no audio element');
-                            audio.src = ttsData.audio;
-                            audio.onended = () => setIsSpeaking(false);
-                            audio.onerror = () => setIsSpeaking(false);
-                            setIsSpeaking(true);
-                            await audio.play();
-                            playedTts = true;
-                        }
-                    } else {
-                        ttsFailed = true;
+                    if (ttsData.audio) {
+                        const audio = audioRef.current;
+                        if (!audio) throw new Error('no audio element');
+                        audio.src = ttsData.audio;
+                        audio.onended = () => setIsSpeaking(false);
+                        audio.onerror = () => setIsSpeaking(false);
+                        setIsSpeaking(true);
+                        await audio.play();
+                        playedTts = true;
                     }
                 } catch {
                     ttsFailed = true;
@@ -271,6 +286,7 @@ const Chatbot: React.FC = () => {
                 speak(botMessage.text);
             }
         } catch (err) {
+            if (err instanceof ApiError && err.status === 401) return; // apiFetch already redirected to /login
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: 'bot',
@@ -367,7 +383,24 @@ const Chatbot: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Messages Area */}
+                        {/* Auth-gated body: the AI chat is a session feature */}
+                        {!isAuthenticated ? (
+                            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center bg-slate-50/50">
+                                <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                                    <LogIn className="h-7 w-7 text-slate-400" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold text-slate-700">Sign in to chat with the assistant</p>
+                                    <p className="text-xs text-slate-400 mt-1">The AI assistant is available to your secure account.</p>
+                                </div>
+                                <a
+                                    href="/login"
+                                    className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-blue-700"
+                                >
+                                    Go to sign in
+                                </a>
+                            </div>
+                        ) : (
                         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-slate-50/50 scroll-smooth">
                             {messages.map((msg) => (
                                 <motion.div
@@ -377,6 +410,28 @@ const Chatbot: React.FC = () => {
                                     transition={{ duration: 0.3 }}
                                     className={cn("flex w-full", msg.sender === 'user' ? "justify-end" : "justify-start")}
                                 >
+                                    {msg.emergency ? (
+                                        // Emergency card: non-diagnostic 112/108 copy.
+                                        // Shown for any message flagged as an emergency
+                                        // (local keyword match or server flag).
+                                        <div className="w-full max-w-[95%] rounded-2xl border-2 border-red-300 bg-red-50 p-4 shadow-sm">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                                                    <Siren className="h-5 w-5 text-red-600" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-black text-red-700">If this is a medical emergency, call for help now.</p>
+                                                    <p className="text-xs text-red-600 mt-0.5">Emergency numbers: 112 (EU/IN landline) or 108. You can also call your local emergency line.</p>
+                                                </div>
+                                            </div>
+                                            {msg.text && (
+                                                <p className="mt-3 text-sm text-slate-700 whitespace-pre-wrap">{msg.text}</p>
+                                            )}
+                                            <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-red-400">
+                                                This assistant cannot diagnose. In an emergency, always call your local emergency number first.
+                                            </p>
+                                        </div>
+                                    ) : (
                                     <div className={cn(
                                         "flex flex-col gap-1 max-w-[85%]",
                                         msg.sender === 'user' ? "items-end" : "items-start"
@@ -394,6 +449,7 @@ const Chatbot: React.FC = () => {
                                             {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                     </div>
+                                    )}
                                 </motion.div>
                             ))}
 
@@ -423,8 +479,33 @@ const Chatbot: React.FC = () => {
                             )}
                             <div ref={messagesEndRef} />
                         </div>
+                        )}
 
-                        {/* Input Area */}
+                        {/* Non-clinical disclaimer + share-chart opt-in toggle */}
+                        {isAuthenticated && (
+                        <div className="px-5 py-2.5 bg-white border-t border-slate-100 shrink-0 space-y-2">
+                            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={shareChart}
+                                    onChange={(e) => setShareChart(e.target.checked)}
+                                    className="h-4 w-4 rounded accent-blue-600"
+                                />
+                                <span className="text-[11px] font-bold text-slate-600">
+                                    Share my chart data with the assistant
+                                </span>
+                            </label>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                <Info className="h-3.5 w-3.5 shrink-0" />
+                                <span>
+                                    General information only — not medical advice, diagnosis or treatment.
+                                </span>
+                            </div>
+                        </div>
+                        )}
+
+                        {/* Input Area — hidden for anonymous visitors */}
+                        {!isAuthenticated ? null : (
                         <div className="p-5 bg-white border-t border-slate-100">
                             <div className="relative flex items-center gap-2">
                                 <motion.button
@@ -451,21 +532,31 @@ const Chatbot: React.FC = () => {
                                     <input
                                         type="text"
                                         value={input}
+                                        maxLength={MAX_MESSAGE_LENGTH}
                                         onChange={(e) => setInput(e.target.value)}
                                         onKeyDown={handleKeyPress}
                                         placeholder={isListening ? "Listening..." : "Tell me what's on your mind..."}
+                                        aria-label="Assistant message"
                                         className="w-full pl-5 pr-4 py-3.5 bg-slate-50 border-slate-200 rounded-xl text-[15px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white transition-all shadow-sm"
                                     />
+                                    {input.length > MAX_MESSAGE_LENGTH * 0.9 && (
+                                        <span className={cn(
+                                            "absolute -top-4 right-1 text-[10px] font-bold",
+                                            input.length >= MAX_MESSAGE_LENGTH ? "text-red-500" : "text-amber-500"
+                                        )}>
+                                            {input.length}/{MAX_MESSAGE_LENGTH}
+                                        </span>
+                                    )}
                                 </div>
 
                                 <motion.button
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
-                                    disabled={!input.trim() || isLoading}
+                                    disabled={!input.trim() || isLoading || input.length >= MAX_MESSAGE_LENGTH}
                                     onClick={handleSend}
                                     className={cn(
                                         "p-3.5 rounded-xl shadow-md transition-all duration-300 flex items-center justify-center",
-                                        input.trim()
+                                        input.trim() && input.length < MAX_MESSAGE_LENGTH
                                             ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30"
                                             : "bg-slate-100 text-slate-300 shadow-none cursor-not-allowed"
                                     )}
@@ -479,6 +570,7 @@ const Chatbot: React.FC = () => {
                                 <div className="h-px w-8 bg-slate-200"></div>
                             </div>
                         </div>
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>

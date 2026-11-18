@@ -1,48 +1,44 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, ArrowRight, KeyRound, Sparkles, Eye, EyeOff, CheckCircle2, Circle, Lock, AlertCircle } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { Loader2, ArrowRight, KeyRound, Sparkles, Eye, EyeOff, CheckCircle2, Circle, Lock, AlertCircle, Mail, ShieldCheck } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { supaSetNewPassword, supaSession, SupabaseNotConfiguredError } from "@/lib/supabase"
+import { apiPasswordReset, ApiError } from "@/lib/api"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
-export default function ResetPassword() {
+function ResetPasswordForm() {
     const router = useRouter()
+    const searchParams = useSearchParams()
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [passwordError, setPasswordError] = useState<string | null>(null)
     const [confirmError, setConfirmError] = useState<string | null>(null)
     const [success, setSuccess] = useState(false)
+    const [email, setEmail] = useState("")
+    const [code, setCode] = useState("")
     const [password, setPassword] = useState("")
     const [confirmPassword, setConfirmPassword] = useState("")
     const [showPassword, setShowPassword] = useState(false)
-    const [linkValid, setLinkValid] = useState(false)
+    const emailRef = useRef<HTMLInputElement>(null)
+    const codeRef = useRef<HTMLInputElement>(null)
     const passwordRef = useRef<HTMLInputElement>(null)
     const confirmRef = useRef<HTMLInputElement>(null)
     const errorBannerRef = useRef<HTMLDivElement>(null)
     const successRef = useRef<HTMLDivElement>(null)
 
-    // On load, check whether a live Supabase recovery session exists
-    // (detectSessionInUrl applied the pending recovery token from the
-    // password-reset link).
+    // The reset email links back here with ?email=... (and, when present,
+    // ?code=...), so we pre-fill from the query string.
     useEffect(() => {
-        supaSession()
-            .then((info) => {
-                if (info) {
-                    setLinkValid(true)
-                } else {
-                    setError("Invalid or expired reset link. Please request a new one from /forgot-password.")
-                }
-            })
-            .catch(() => {
-                setError("Failed to read the reset link. Please request a new one from /forgot-password.")
-            })
-    }, [])
+        const em = searchParams.get("email")
+        const cd = searchParams.get("code")
+        if (em) setEmail(em)
+        if (cd) setCode(cd)
+    }, [searchParams])
 
     useEffect(() => {
         if (success) successRef.current?.focus()
@@ -60,6 +56,16 @@ export default function ResetPassword() {
         setError(null)
         setPasswordError(null)
         setConfirmError(null)
+
+        const missing: string[] = []
+        if (!email.trim()) missing.push("email")
+        if (!code.trim()) missing.push("code")
+        if (!password) missing.push("password")
+        if (missing.length > 0) {
+            setError(`Please fill in ${missing.join(" and ")} to reset your password.`)
+            errorBannerRef.current?.focus()
+            return
+        }
 
         const pwIssues: string[] = []
         if (password.length < 8) pwIssues.push("at least 8 characters")
@@ -87,10 +93,8 @@ export default function ResetPassword() {
 
         setIsLoading(true)
         try {
-            // The Supabase client applied the pending recovery token from the
-            // URL on load (detectSessionInUrl). updateUser({password}) posts
-            // the new password against that token.
-            await supaSetNewPassword(password)
+            // POST /api/v1/auth/password/reset {email, code, new_password}.
+            await apiPasswordReset(email.trim(), code.trim(), password)
 
             setSuccess(true)
             setTimeout(() => {
@@ -99,9 +103,9 @@ export default function ResetPassword() {
         } catch (err: unknown) {
             // Preserve the typed passwords on a recoverable server error.
             setError(
-                err instanceof SupabaseNotConfiguredError
-                    ? "Password reset is unavailable right now. Please try again shortly."
-                    : "Failed to reset password. The link may have expired."
+                err instanceof ApiError
+                    ? err.message || "Failed to reset password. The code may have expired."
+                    : "Failed to reset password. Please try again."
             )
             errorBannerRef.current?.focus()
         } finally {
@@ -173,6 +177,52 @@ export default function ResetPassword() {
 
                             <div className="space-y-6">
                                 <div className="space-y-3">
+                                    <Label htmlFor="email" className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Email Address</Label>
+                                    <div className="relative group">
+                                        <div className={cn("absolute left-5 top-1/2 -translate-y-1/2 transition-colors duration-300", email ? "text-teal-600" : "text-slate-300")}>
+                                            <Mail className="h-6 w-6" />
+                                        </div>
+                                        <Input
+                                            ref={emailRef}
+                                            id="email"
+                                            name="email"
+                                            type="email"
+                                            required
+                                            aria-invalid={error ? true : undefined}
+                                            className={cn(
+                                                "h-16 pl-14 pr-6 bg-slate-50/50 border-transparent rounded-2xl focus:bg-white focus:ring-[6px] focus:ring-slate-100 focus:border-slate-200 transition-all text-lg font-medium shadow-none"
+                                            )}
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            autoComplete="email"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <Label htmlFor="code" className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Reset Code</Label>
+                                    <div className="relative group">
+                                        <div className={cn("absolute left-5 top-1/2 -translate-y-1/2 transition-colors duration-300", code ? "text-teal-600" : "text-slate-300")}>
+                                            <ShieldCheck className="h-6 w-6" />
+                                        </div>
+                                        <Input
+                                            ref={codeRef}
+                                            id="code"
+                                            name="code"
+                                            type="text"
+                                            required
+                                            aria-invalid={error ? true : undefined}
+                                            className={cn(
+                                                "h-16 pl-14 pr-6 bg-slate-50/50 border-transparent rounded-2xl focus:bg-white focus:ring-[6px] focus:ring-slate-100 focus:border-slate-200 transition-all text-lg font-medium shadow-none"
+                                            )}
+                                            value={code}
+                                            onChange={(e) => setCode(e.target.value)}
+                                            autoComplete="one-time-code"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
                                     <Label htmlFor="password" className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-2">New Security Key</Label>
                                     <div className="relative group">
                                         <div className={cn("absolute left-5 top-1/2 -translate-y-1/2 transition-colors duration-300", password ? "text-teal-600" : "text-slate-300")}>
@@ -183,7 +233,7 @@ export default function ResetPassword() {
                                             id="password"
                                             type={showPassword ? "text" : "password"}
                                             required
-                                            disabled={!linkValid}
+                                            disabled={isLoading}
                                             aria-invalid={passwordError ? true : undefined}
                                             aria-describedby={passwordError ? "password-error" : "password-checklist"}
                                             className={cn(
@@ -229,7 +279,7 @@ export default function ResetPassword() {
                                             name="confirmPassword"
                                             type="password"
                                             required
-                                            disabled={!linkValid}
+                                            disabled={isLoading}
                                             aria-invalid={confirmError ? true : undefined}
                                             aria-describedby={confirmError ? "confirm-error" : undefined}
                                             className={cn(
@@ -251,7 +301,7 @@ export default function ResetPassword() {
                                 type="submit"
                                 aria-busy={isLoading || undefined}
                                 className="w-full h-18 bg-teal-600 text-white font-black text-xl rounded-[2rem] shadow-2xl shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 group"
-                                disabled={isLoading || !linkValid}
+                                disabled={isLoading}
                             >
                                 {isLoading ? (
                                     <span className="flex items-center justify-center gap-3">
@@ -283,5 +333,19 @@ export default function ResetPassword() {
                 </div>
             </div>
         </div>
+    )
+}
+
+export default function ResetPassword() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen flex items-center justify-center bg-white font-black tracking-widest text-slate-200">
+                    INIT_RESET_PROTOCOL...
+                </div>
+            }
+        >
+            <ResetPasswordForm />
+        </Suspense>
     )
 }

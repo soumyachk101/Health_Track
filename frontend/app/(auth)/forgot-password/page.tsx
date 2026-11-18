@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, ArrowRight, ArrowLeft, Mail, Sparkles, KeyRound, AlertCircle, CheckCircle2 } from "lucide-react"
 import Link from "next/link"
-import { supaResetEmail, SupabaseNotConfiguredError } from "@/lib/supabase"
+import { apiPasswordForgot, ApiError } from "@/lib/api"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
@@ -47,14 +47,14 @@ export default function ForgotPassword() {
 
         setIsLoading(true)
         try {
-            const redirectTo = `${window.location.origin}/reset-password`
-            await supaResetEmail(value, redirectTo)
+            // 202 always, whether or not the email is known (no enumeration).
+            await apiPasswordForgot(value)
             setSuccess(true)
         } catch (err: unknown) {
             // Preserve the typed email after a recoverable server error.
             setError(
-                err instanceof SupabaseNotConfiguredError
-                    ? "Password reset is unavailable right now (auth not configured). Please try again shortly."
+                err instanceof ApiError
+                    ? err.message || "Failed to send the reset link. Please try again."
                     : "Failed to send the reset link. Please try again."
             )
             errorBannerRef.current?.focus()

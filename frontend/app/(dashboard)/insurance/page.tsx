@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageError, PageSkeleton, PageEmpty } from "@/components/ui/page-states"
 import { Button } from "@/components/ui/button"
 import { Shield, FileText, CheckCircle, AlertCircle, Plus, Calendar } from "lucide-react"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 interface Policy {
     provider_name: string
@@ -28,7 +27,6 @@ export default function Insurance() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [reloadKey, setReloadKey] = useState(0)
-    const router = useRouter()
 
     const refetch = useCallback(() => {
         setError(null)
@@ -41,37 +39,15 @@ export default function Insurance() {
         const fetchData = async () => {
             setLoading(true)
             setError(null)
-
-            const token = localStorage.getItem('token')
-            if (!token) {
-                router.push('/login')
-                return
-            }
-
             try {
-                const response = await fetch(getApiUrl("/api/insurance/"), {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
+                const result = await apiFetch<InsuranceData>("/api/insurance/", {
+                    signal: controller.signal,
                 })
-
-                if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem('token')
-                    router.push('/login')
-                    return
-                }
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch insurance data')
-                }
-
-                const result = await response.json()
                 setData(result)
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     if (err.name === 'AbortError') return
+                    if (err instanceof ApiError && err.status === 401) return
                     console.error("Insurance Fetch Error:", err)
                     setError(err.message || "Failed to load insurance data")
                 } else {
@@ -87,7 +63,7 @@ export default function Insurance() {
 
         fetchData()
         return () => controller.abort()
-    }, [router, reloadKey])
+    }, [reloadKey])
 
     if (loading) {
         return (

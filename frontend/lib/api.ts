@@ -1,27 +1,31 @@
-// Generic JSON API boundary: responses can be arbitrarily shaped, so the
-// helper intentionally uses `any` at the edge and lets callers type via T.
+// Central typed API client for the Pure Go session.
+//
+// Auth is cookie-based: the Go backend sets HttpOnly `ht_access` / `ht_refresh`
+// cookies on login/register/otp-verify. Every request here sends
+// `credentials: "include"` so those cookies are attached (same-site
+// subdomains `app.*`/`api.*` in production; CORS in dev). There is no Bearer
+// token and no Supabase.
+//
+// On a 401 from a protected call we do a single-flight silent refresh
+// (POST /api/v1/auth/refresh) and then retry the request exactly once. If the
+// refresh itself fails (or the retry still 401s) we clear the session and
+// redirect to /login.
+//
+// Responses can be arbitrarily shaped, so the helper types the result via T
+// and uses `any` at the edge.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getStoredToken, clearSession } from "./utils";
 
 const BASE_API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+
+export const API_URL = BASE_API_URL;
 
 export const getApiUrl = (path: string) => {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${BASE_API_URL}${cleanPath}`;
 };
 
-export const API_URL = BASE_API_URL;
-
-export interface AuthUser {
-  id: number;
-  username: string;
-  email: string;
-  role: string;
-}
-
-// Error thrown by apiFetch when the HTTP status is not 2xx or the body is
-// {success:false}. `data` carries the parsed response (error message,
-// requires_verification, ...) when one was available.
+// Error thrown by apiFetch when the HTTP status is not 2xx. `data` carries
+// the parsed response (error / message) when one was available.
 export class ApiError extends Error {
   status: number;
   data: any;
@@ -34,73 +38,157 @@ export class ApiError extends Error {
   }
 }
 
-export interface ApiFetchOptions {
+export interface AuthFetchOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
-  // Whether to attach the stored Bearer token. Default true.
-  auth?: boolean;
-  // On 401 from a protected call: "redirect" clears the session and navigates
-  // to /login (unless already there); "ignore" only clears the session.
-  onUnauthorized?: "redirect" | "ignore";
+  // A protected (cookie-authenticated) call: on 401 we do a single silent
+  // refresh + one retry. Unauthenticated entry points (login/register/...)
+  // set this false so a 401 there surfaces directly instead of refreshing.
+  protected?: boolean;
+  // When refresh leaves us still unauthenticated, redirect to /login.
+  // Default true; set false for calls that must not navigate away.
+  redirectOn401?: boolean;
+  signal?: AbortSignal;
 }
 
-// Central fetch helper: prefixes via getApiUrl, sends JSON, attaches the
-// Bearer token from localStorage, and returns parsed JSON. The Go backend
-// has no CSRF protection, so no X-CSRFToken handling is done here.
-export async function apiFetch<T = any>(path: string, opts: ApiFetchOptions = {}): Promise<T> {
-  const { method = "GET", body, auth = true, onUnauthorized = "redirect" } = opts;
+// ---- Single-flight silent refresh ----
+// Only one refresh in flight at a time so a burst of 401s does not fire a
+// storm of POST /refresh (the refresh cookie rotates, so concurrent calls
+// would replay a consumed token and nuke the family).
+let refreshInFlight: Promise<boolean> | null = null;
 
+export function refreshSession(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(getApiUrl("/api/v1/auth/refresh"), {
+          method: "POST",
+          credentials: "include",
+        });
+        return res.ok;
+      } catch {
+        return false;
+      } finally {
+        // Resolve before resetting so in-flight callers all share this one.
+        await Promise.resolve();
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+// Clean logout: revoke the refresh family server-side (clears both HttpOnly
+// cookies), then navigate to /login. The revocation is best-effort — a failure
+// to reach the endpoint must not trap the user on a broken page.
+export function logout(redirectTo = "/login"): void {
+  if (typeof window !== "undefined") {
+    void fetch(getApiUrl("/api/v1/auth/logout"), {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => {});
+    if (!window.location.pathname.startsWith(redirectTo)) {
+      window.location.href = redirectTo;
+    }
+  }
+}
+
+async function sendRequest(
+  path: string,
+  method: string,
+  body: unknown,
+  signal?: AbortSignal
+): Promise<Response> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (auth) {
-    const token = getStoredToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(getApiUrl(path), {
+  return fetch(getApiUrl(path), {
     method,
     headers,
+    credentials: "include",
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
+}
 
-  let data: any = null;
+async function parseJson(res: Response): Promise<any> {
   try {
-    data = await res.json();
+    return await res.json();
   } catch {
-    // Non-JSON body.
+    return null;
   }
+}
 
-  if (res.status === 401 && auth) {
-    clearSession();
-    if (
-      onUnauthorized === "redirect" &&
-      typeof window !== "undefined" &&
-      !window.location.pathname.startsWith("/login")
-    ) {
-      window.location.href = "/login";
+// The data-API workhorse: cookie auth + silent 401->refresh->retry-once.
+// Returns the parsed JSON body (callers type it via T).
+export async function apiFetch<T = any>(path: string, opts: AuthFetchOptions = {}): Promise<T> {
+  const { method = "GET", body, protected: isProtected = true, redirectOn401 = true, signal } =
+    opts;
+
+  let res = await sendRequest(path, method, body, signal);
+
+  if (isProtected && res.status === 401) {
+    const refreshed = await refreshSession();
+    if (refreshed) res = await sendRequest(path, method, body, signal);
+    if (res.status === 401) {
+      const data = await parseJson(res);
+      if (redirectOn401) logout();
+      throw new ApiError(
+        data?.error || "Your session has expired. Please sign in again.",
+        401,
+        data
+      );
     }
-    throw new ApiError(data?.error || "Unauthorized", res.status, data);
   }
 
-  const successAware = data && typeof data === "object" && "success" in data;
-  if (!res.ok || (successAware && data.success === false)) {
+  const data = await parseJson(res);
+  if (!res.ok) {
     throw new ApiError(
-      data?.error || `Request failed with status ${res.status}`,
+      data?.error || data?.message || `Request failed with status ${res.status}`,
       res.status,
       data
     );
   }
-
   return data as T;
 }
 
-// ---- Auth endpoints (bodies match the Go backend exactly) ----
+// ---- Auth endpoints (bodies + paths match the Pure Go auth contract) ----
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  role: string;
+  status: string;
+}
+
+export interface SessionPayload {
+  user: AuthUser;
+  access_expires_at: string;
+}
+
+// Live session from the unified endpoint, or null when unauthenticated.
+// This is the single source of truth for the app's auth state.
+export async function getSession(): Promise<SessionPayload | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const res = await fetch(getApiUrl("/api/v1/auth/session"), { credentials: "include" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 export function apiLogin(username: string, password: string) {
-  return apiFetch<{ success: boolean; token: string; user: AuthUser }>("/accounts/api/login", {
+  return apiFetch<{ success: boolean; user?: AuthUser; error?: string }>("/api/v1/auth/login", {
     method: "POST",
     body: { username, password },
-    auth: false,
+    protected: false,
+    // A wrong-creds 401 must surface as an error, not nuke-and-redirect.
+    redirectOn401: false,
   });
 }
 
@@ -110,107 +198,64 @@ export interface RegisterPayload {
   password: string;
   first_name: string;
   last_name: string;
-  role: string;
-  provider_type: string;
-  business_name: string;
-  license_number: string;
-  specialization: string;
-  state: string;
-}
-
-export function apiRegister(payload: RegisterPayload) {
-  return apiFetch<{ success: boolean; email?: string; username?: string; message?: string; error?: string }>(
-    "/accounts/api/register",
-    { method: "POST", body: payload, auth: false }
-  );
-}
-
-export function apiVerifyOtp(otp: string, email: string, otpType = "register") {
-  return apiFetch<{ success: boolean; token?: string; user?: AuthUser; error?: string }>("/accounts/api/verify-otp", {
-    method: "POST",
-    body: { otp, email, otp_type: otpType },
-    auth: false,
-  });
-}
-
-export function apiResendOtp(otpType: string, email: string, firstName = "") {
-  return apiFetch<{ success: boolean; message?: string; error?: string }>("/accounts/api/resend-otp", {
-    method: "POST",
-    body: { otp_type: otpType, email, first_name: firstName },
-    auth: false,
-  });
-}
-
-export function apiForgotPassword(email: string) {
-  // 200 {success:true} even for unknown emails (no enumeration); 500 on server failure.
-  return apiFetch<{ success: boolean; error?: string }>("/accounts/api/forgot-password", {
-    method: "POST",
-    body: { email },
-    auth: false,
-  });
-}
-
-export function apiResetPassword(email: string, otp: string, newPassword: string) {
-  return apiFetch<{ success: boolean; message?: string; error?: string }>("/accounts/api/reset-password", {
-    method: "POST",
-    body: { email, otp, new_password: newPassword },
-    auth: false,
-  });
-}
-
-export function apiGoogleLogin(credential: string, role = "patient") {
-  return apiFetch<{ success: boolean; token?: string; user?: AuthUser; error?: string }>("/accounts/api/google-login", {
-    method: "POST",
-    body: { credential, role },
-    auth: false,
-  });
-}
-
-export function apiProfile() {
-  return apiFetch<{ user: Record<string, any>; messages: Array<{ tags: string; message: string }> }>("/api/profile");
-}
-
-// ---- Supabase onboarding: capture role/provider fields server-side ----
-// Called AFTER Supabase signup so the Go backend can mirror the user into its
-// profiles table with the app-specific fields (role, provider_type, ...). The
-// endpoint is being added in parallel with this frontend work; when it 404s
-// (not deployed yet) this logs and continues instead of crashing the signup
-// flow — the trigger-based profile row already exists server-side.
-export interface RegisterProfilePayload {
-  email: string;
-  role: string;
+  role?: string;
   provider_type?: string;
   business_name?: string;
   license_number?: string;
   specialization?: string;
-  first_name?: string;
-  last_name?: string;
-  [key: string]: unknown;
 }
 
-export async function apiRegisterProfile(payload: RegisterProfilePayload): Promise<{
-  ok: boolean;
-  status?: number;
-}> {
-  try {
-    await apiFetch("/accounts/api/register-profile", {
+export function apiRegister(payload: RegisterPayload) {
+  return apiFetch<{ success: boolean; message?: string; error?: string }>("/api/v1/auth/register", {
+    method: "POST",
+    body: payload,
+    protected: false,
+    redirectOn401: false,
+  });
+}
+
+export function apiOtpVerify(email: string, code: string, otpType = "register") {
+  return apiFetch<{ success: boolean; user?: AuthUser; error?: string }>(
+    "/api/v1/auth/otp/verify",
+    { method: "POST", body: { email, code, otp_type: otpType }, protected: false, redirectOn401: false }
+  );
+}
+
+// 202 {success:true} regardless of whether the email is known (no enumeration).
+export function apiPasswordForgot(email: string) {
+  return apiFetch<{ success: boolean; error?: string }>("/api/v1/auth/password/forgot", {
+    method: "POST",
+    body: { email },
+    protected: false,
+    redirectOn401: false,
+  });
+}
+
+export function apiPasswordReset(email: string, code: string, newPassword: string) {
+  return apiFetch<{ success: boolean; message?: string; error?: string }>(
+    "/api/v1/auth/password/reset",
+    {
       method: "POST",
-      body: payload,
-      auth: false,
-      // 401/404 must not clear the (just-created) Supabase session or
-      // redirect the user away from the success state.
-      onUnauthorized: "ignore",
-    });
-    return { ok: true };
-  } catch (err) {
-    const status = err instanceof ApiError ? err.status : undefined;
-    if (status === 404) {
-      console.warn(
-        "[api] /accounts/api/register-profile not deployed yet (404); continuing signup without it."
-      );
-    } else {
-      console.warn("[api] register-profile call failed:", err instanceof Error ? err.message : err);
+      body: { email, code, new_password: newPassword },
+      protected: false,
+      redirectOn401: false,
     }
-    return { ok: false, status };
-  }
+  );
+}
+
+export function apiGoogleLogin(credential: string) {
+  return apiFetch<{ success: boolean; user?: AuthUser; error?: string }>("/api/v1/auth/google", {
+    method: "POST",
+    body: { credential },
+    protected: false,
+    redirectOn401: false,
+  });
+}
+
+// ---- Protected data endpoints the pages already consume ----
+
+export function apiProfile() {
+  return apiFetch<{ user: Record<string, any>; messages: Array<{ tags: string; message: string }> }>(
+    "/api/profile"
+  );
 }

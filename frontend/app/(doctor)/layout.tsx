@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RouteGuard } from "@/components/guards/RouteGuard";
 
 // Doctor console: authenticated-only area, excluded from search engines.
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function DoctorLayoutMeta({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <RouteGuard requiredRole="doctor">
+      {children}
+    </RouteGuard>
+  );
 }

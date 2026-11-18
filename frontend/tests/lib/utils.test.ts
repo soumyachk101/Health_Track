@@ -1,76 +1,57 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import {
-  ROLE_STORAGE_KEY,
-  TOKEN_STORAGE_KEY,
-  clearSession,
-  getStoredToken,
-  getSessionRole,
-  setSession,
-} from "@/lib/utils";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearSession, roleHomePath } from "@/lib/utils";
 
-const ALL_KEYS = [TOKEN_STORAGE_KEY, ROLE_STORAGE_KEY, "token", "user"];
+// The Pure Go cookie session lives in HttpOnly cookies, not localStorage.
+// utils.ts only exposes two helpers now: clearSession (redirect) and
+// roleHomePath (pure). Both are trivial and safe under jsdom.
 
-function clearAllKeys() {
-  for (const key of ALL_KEYS) window.localStorage.removeItem(key);
-}
-
-describe("lib/utils session helpers", () => {
-  beforeEach(() => clearAllKeys());
-
-  it("setSession writes the canonical and legacy keys", () => {
-    setSession("tok", "patient", { id: 1 });
-
-    expect(getStoredToken()).toBe("tok");
-    expect(window.localStorage.getItem(TOKEN_STORAGE_KEY)).toBe("tok");
-    expect(window.localStorage.getItem("token")).toBe("tok");
-    expect(window.localStorage.getItem(ROLE_STORAGE_KEY)).toBe("patient");
-    expect(JSON.parse(window.localStorage.getItem("user")!)).toEqual({ id: 1, role: "patient" });
+describe("roleHomePath", () => {
+  it.each([
+    ["admin", "/admin"],
+    ["doctor", "/doctor/dashboard"],
+    ["provider", "/provider/dashboard"],
+    ["patient", "/dashboard"],
+  ] as const)("maps %s -> %s", (role, home) => {
+    expect(roleHomePath(role)).toBe(home);
   });
 
-  it("clearSession removes the canonical and legacy keys", () => {
-    setSession("tok", "patient", { id: 1 });
-    clearSession();
+  it("returns /login for unknown or null roles", () => {
+    expect(roleHomePath(null)).toBe("/login");
+    expect(roleHomePath(undefined)).toBe("/login");
+    expect(roleHomePath("nurse")).toBe("/login");
+    expect(roleHomePath("")).toBe("/login");
+  });
+});
 
-    for (const key of ALL_KEYS) expect(window.localStorage.getItem(key)).toBeNull();
+describe("clearSession", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("getStoredToken falls back to the legacy 'token' key", () => {
-    window.localStorage.setItem("token", "legacy-tok");
-
-    expect(getStoredToken()).toBe("legacy-tok");
+  it("redirects to /login when redirectToLogin is true (and not already there)", () => {
+    const loc = {
+      pathname: "/dashboard",
+      href: "http://localhost/dashboard",
+    } as { pathname: string; href: string };
+    vi.stubGlobal("location", loc);
+    clearSession(true);
+    expect(loc.href).toBe("/login");
   });
 
-  it("getSessionRole falls back to the legacy user JSON's role", () => {
-    window.localStorage.setItem("user", JSON.stringify({ role: "admin" }));
-
-    expect(getSessionRole()).toBe("admin");
+  it("is a no-op when redirectToLogin is false", () => {
+    const loc = {
+      pathname: "/dashboard",
+      href: "http://localhost/dashboard",
+    } as { pathname: string; href: string };
+    vi.stubGlobal("location", loc);
+    clearSession(false);
+    expect(loc.href).toBe("http://localhost/dashboard");
   });
 
-  it("getSessionRole returns null for malformed legacy user JSON", () => {
-    window.localStorage.setItem("user", "not json");
-
-    expect(getSessionRole()).toBeNull();
-  });
-
-  describe("when window is undefined (SSR)", () => {
+  it("is a safe no-op in an SSR context (no window)", () => {
     const originalWindow = globalThis.window;
-
-    beforeEach(() => {
-      // jsdom defines window on globalThis; delete it to simulate Node SSR.
-      delete (globalThis as Record<string, unknown>).window;
-    });
-
-    it("every helper is a safe no-op", () => {
-      expect(() => {
-        setSession("tok", "patient");
-        clearSession(true);
-      }).not.toThrow();
-      expect(getStoredToken()).toBeNull();
-      expect(getSessionRole()).toBeNull();
-    });
-
-    afterAll(() => {
-      (globalThis as Record<string, unknown>).window = originalWindow;
-    });
+    delete (globalThis as Record<string, unknown>).window;
+    expect(() => clearSession(true)).not.toThrow();
+    (globalThis as Record<string, unknown>).window = originalWindow;
   });
 });

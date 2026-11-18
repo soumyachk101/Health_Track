@@ -1,0 +1,12 @@
+# GitGuardian GitHub App configuration (see docs/HANDOFF_STATUS.md "GitGuardian"
+# entry). The integration-test fixtures in backend/test/ register and log in
+# as throwaway users against a disposable Postgres created per run: the
+# literals there are NOT credentials for any real service, so the generic
+# password detector would fire on every fixture value (high-entropy or not).
+# We allowlist the fixture paths rather than rotate values, which only opens
+# new incidents on the same lines.
+allowlist:
+  - id: disposable-test-fixtures
+    description: Integration-test users created against a throwaway DB; no live credential involved.
+    include-paths:
+      - "backend/test/**"

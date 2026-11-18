@@ -7,8 +7,7 @@ import { PageError, PageSkeleton, PageEmpty } from "@/components/ui/page-states"
 import { Activity, Plus, Heart, Droplet, Weight, Wind } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 interface HealthRecord {
     recorded_at: string
@@ -30,7 +29,6 @@ export default function HealthTrack() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [reloadKey, setReloadKey] = useState(0)
-    const router = useRouter()
 
     const refetch = useCallback(() => {
         setError(null)
@@ -43,37 +41,15 @@ export default function HealthTrack() {
         const fetchData = async () => {
             setLoading(true)
             setError(null)
-
-            const token = localStorage.getItem('token')
-            if (!token) {
-                router.push('/login')
-                return
-            }
-
             try {
-                const response = await fetch(getApiUrl("/api/health-track/"), {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
+                const result = await apiFetch<HealthTrackData>("/api/health-track/", {
+                    signal: controller.signal,
                 })
-
-                if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem('token')
-                    router.push('/login')
-                    return
-                }
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch health records')
-                }
-
-                const result = await response.json()
                 setData(result)
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     if (err.name === 'AbortError') return
+                    if (err instanceof ApiError && err.status === 401) return
                     console.error("Health Track Fetch Error:", err)
                     setError(err.message || "Failed to load health records")
                 } else {
@@ -89,7 +65,7 @@ export default function HealthTrack() {
 
         fetchData()
         return () => controller.abort()
-    }, [router, reloadKey])
+    }, [reloadKey])
 
     if (loading) {
         return (

@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Clock, MapPin, DollarSign, Package, Home, Settings, AlertCircle, Inbox, Loader2 } from 'lucide-react'
-import { cn, getStoredToken, clearSession } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 const providerNavItems = [
     { icon: Home, label: "Dashboard", href: "/provider/dashboard" },
@@ -32,33 +31,18 @@ export default function ProviderRequests() {
     const [requests, setRequests] = useState<ServiceRequest[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
-    const router = useRouter()
 
     const fetchRequests = useCallback(async () => {
-        const token = getStoredToken()
-        if (!token) {
-            router.push('/login')
-            return
-        }
         try {
             setError(null)
-            const response = await fetch(getApiUrl("/api/service-requests"), {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-
-            if (response.status === 401 || response.status === 403) {
-                clearSession()
-                router.push('/login')
-                return
-            }
-
-            const data = await response.json()
-            if (data.success) {
-                setRequests(data.requests)
-            } else {
-                throw new Error(data.message || 'Failed to load service requests')
-            }
+            // Cookie auth + silent 401->refresh->retry handled centrally; a
+            // dead session already redirects to /login inside apiFetch.
+            const data = await apiFetch<{ success?: boolean; requests?: ServiceRequest[] }>(
+                "/api/service-requests"
+            )
+            setRequests(data.requests ?? [])
         } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 401) return // redirecting
             if (err instanceof Error) {
                 console.error("Failed to fetch requests:", err.message)
                 setError(err.message)
@@ -69,7 +53,7 @@ export default function ProviderRequests() {
         } finally {
             setIsLoading(false)
         }
-    }, [router])
+    }, [])
 
     useEffect(() => {
         fetchRequests()
@@ -77,21 +61,11 @@ export default function ProviderRequests() {
 
     const handleAction = async (id: number, action: 'accept' | 'decline' | 'complete') => {
         try {
-            const token = getStoredToken()
-
-            const response = await fetch(getApiUrl(`/api/service-requests/${id}/action`), {
+            await apiFetch(`/api/service-requests/${id}/action`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ action })
+                body: { action },
             })
-
-            const data = await response.json()
-            if (data.success) {
-                fetchRequests() 
-            }
+            fetchRequests() // Refresh list
         } catch (err: unknown) {
             if (err instanceof Error) {
                 console.error("Action failed:", err.message)
