@@ -171,6 +171,10 @@ pause 60s then continue. Nobody commits or pushes — the human commits at the e
   current on-disk file is the final version. Re-ran full VERIFY loop now:
   `npm test` 73/73 PASS (9 files), `npx tsc --noEmit` exit 0, `npm run build`
   35/35 PASS. CLI 6 can re-gate; frontend lane is 5/5 on its side of the tree.
+- CLI-1 contract ack: 202/200 split confirmed by CLI 1; failed jobs carry
+  `last_error` with no `result` (asynq backoff → 5 attempts → dead-letter
+  collapses to "failed") — UI's retry bubble re-sends the message (fresh
+  job), and `result.response` is read only on completed. No shape drift.
 
 ## 2026-11-18 12:37 — CLI 5 — board gap note (audit-only; no entries from CLI 1-4 yet)
 - did: audit read of CLI 1–4 state at 12:37 — **no CLI 1–4 entries have landed in
@@ -411,3 +415,56 @@ pause 60s then continue. Nobody commits or pushes — the human commits at the e
   - gstack /verify: **no declared checks** (tests-only selection, no
     manifest; runner untrusted) — recorded as such.
 - next / unblocked: CLI 6 — tree is green, gate can run now.
+
+## 2026-11-18 14:1x — CLI 6 — FINAL GATE: GREEN — PR #4 opened (all 5/5 done)
+- did:
+  - Gate triggered at 5/5 (CLI 1 12:53 entry + CLI 3 re-gate confirmed
+    the `context` import + cache_test on disk). Re-ran the full
+    cross-stack gate fresh on the committed tree:
+  - gstack `/verify`: `gstack-checks detect` → "CHECKS: tests only,
+    TRUST untrusted"; `run --allow-repo-commands` → `tests=INCOMPLETE`
+    (Go test runner not detected for 6/7 selected files; the 1 detected
+    Vitest file ran green; same environmental result CLI 3/4/5 saw).
+    Per the /verify skill's "no declared checks" fallback, the direct
+    gate commands below are the evidence. `/ship` scope executed:
+    review full pending diff (5 lanes, secret-scan of added lines
+    CLEAN, gofmt CLEAN) → commit → PR → STOP.
+- GATE RESULTS (exact commands, final tree @ 37f12dc):
+
+  | Check | Command | Result |
+  |---|---|---|
+  | Backend build | `cd backend && go build ./...` | **GREEN** (exit 0) |
+  | Backend vet | `cd backend && go vet ./...` | **GREEN** (exit 0) |
+  | Backend tests | `cd backend && go test -count=1 ./...` | **GREEN** — 12 packages ok (config, database, hands, middleware, models, modules/auth, platform/cache, platform/queue, platform/storage, services/ai, services/otp, cmd/worker) |
+  | Frontend tests | `cd frontend && npm test` | **GREEN** — 73/73 across 9 files |
+  | Frontend tsc | `cd frontend && npx tsc --noEmit` | **GREEN** (exit 0) |
+  | Frontend build | `cd frontend && npm run build` | **GREEN** — 35/35 static pages |
+  | Integration suite | `cd backend && go test -tags integration ./test/...` | **NOT RUN — no disposable Postgres DSN** (per CLI 3: `.env` pooler unreachable, TCP 5432 times out; DSN-gated tests skip cleanly) |
+  | gofmt | `cd backend && gofmt -l internal cmd` | **CLEAN** (empty) |
+  | cache tests | `ls backend/internal/platform/cache/cache_test.go` | **PRESENT** — 9 tests incl. replay→family-kill + user:revoked_before |
+  | uploads decision | `git ls-files backend/uploads` | **EMPTY** — dir deleted, blanket `uploads/` in `.gitignore:11` (P2.4 closed) |
+  | `/files` nav item | `grep -n '/files' frontend/components/layout/nav-config.ts` | **PRESENT** — line 9, "My Files" |
+  | chatbot specs | `frontend/tests/components/chatbot.test.tsx` | **PRESENT** — 6 specs, all green |
+  | supabase refs | `git grep -i supabase -- frontend` | **GREEN** — 0 code refs; 2 explanatory comments only (`.env.example`, `lib/api.ts`) |
+  | uploads mount | `git grep -F 'r.Static("/uploads"' -- backend` | **GREEN** — 0 matches |
+  | CLI 5 audit table | board @ 12:45 | **ALL GREEN** (uploads row superseded-on-disk by CLI 3's delete) |
+
+- PR: **https://github.com/soumyachk101/Health_Track/pull/4**
+  (commit 37f12dc, 23 files, +1654/−86; base `main`). Stopped at PR
+  per wave-4 instruction — no deploy, no merge, no `/land-and-deploy`.
+- residual risks (recorded on the PR body too):
+  1. Live-Redis e2e unexercised (202→poll→result verified via contract
+     + seam tests only; first live run happens on the deployed worker).
+  2. Cloud Run deploy = Phase 6 — no infra changes in this PR.
+  3. Same-site cookie check vs real deploy URLs still open (ADR-0001
+     rollout step 2).
+  4. TTS still synchronous (`ai:tts` task type is headroom; route
+     not wired).
+  5. **Rotation bug (owner decision):** `rt_fam:<successor>`
+     registered from the predecessor hash (MemCache TrimPrefix vs Lua
+     string.sub off-by-one) → legitimate 2nd refresh dies "dead";
+     pinned as current behavior by
+     `TestRotateScriptSuccessorRegistrationFinding`.
+  6. Gitignored `frontend/.env.local` holds a stale pre-cutover
+     Supabase key (`sb_publishable_*`) — human rotate/delete call;
+     not in the PR (untracked).
