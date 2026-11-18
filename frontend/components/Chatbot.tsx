@@ -4,6 +4,7 @@ import { X, Send, Sparkles, Mic, MicOff, Volume2, VolumeX, Siren, LogIn, Info } 
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch, ApiError } from '@/lib/api';
+import { pollChat, ChatJobFailedError, ChatJobPendingError } from '@/lib/chat';
 import { useAuth } from '@/components/Providers';
 
 // Pinned AI-chat contract (CLI_ORCHESTRATION.md): 8 KB message cap (matches
@@ -52,6 +53,9 @@ type Message = {
     timestamp: Date;
     // Emergency flag: render the emergency card instead of the normal bubble.
     emergency?: boolean;
+    // A failed queued chat (job status failed, or the poll budget ran out)
+    // renders a retry affordance that re-sends the user's message.
+    retryText?: string;
 };
 
 const Chatbot: React.FC = () => {
@@ -77,6 +81,11 @@ const Chatbot: React.FC = () => {
     const audioRef = useRef<HTMLAudioElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const recognitionRef = useRef<SpeechRecognition | null>(null);
+    // Cancels the in-flight chat request + job poll when the panel unmounts,
+    // so a closed panel never keeps polling the worker.
+    const abortRef = useRef<AbortController | null>(null);
+
+    useEffect(() => () => abortRef.current?.abort(), []);
 
     // Initialize Speech Recognition
     useEffect(() => {
@@ -206,26 +215,14 @@ const Chatbot: React.FC = () => {
         scrollToBottom();
     }, [messages, isOpen]);
 
-    const handleSend = async () => {
-        if (!input.trim()) return;
-        // Enforce the same 8 KB cap as the backend so a rejected message never
-        // reaches the wire; the UI also blocks the send button above the cap.
-        const text = input.slice(0, MAX_MESSAGE_LENGTH).trim();
-        if (text.length >= MAX_MESSAGE_LENGTH) {
-            setChatError(`Messages are capped at ${MAX_MESSAGE_LENGTH} characters. Please shorten your message.`);
-            return;
-        }
-
-        const userMessage: Message = {
-            id: Date.now().toString(),
-            sender: 'user',
-            text,
-            timestamp: new Date(),
-        };
-
-        setMessages((prev) => [...prev, userMessage]);
-        setInput('');
+    // The heavy chat path: one POST /chatbot/api that either answers
+    // synchronously (legacy 200 {response}) or enqueues a 202 {job_id} that we
+    // poll to completion. Shared by the send button and the retry affordance.
+    const runChat = async (text: string, shareChartFlag: boolean) => {
         setIsLoading(true);
+        setChatError(null);
+        const controller = new AbortController();
+        abortRef.current = controller;
 
         // Emergency intent is surfaced immediately (non-diagnostic). The server
         // runs the same branch BEFORE any model call; this local check just
@@ -233,25 +230,17 @@ const Chatbot: React.FC = () => {
         const emergencyDetected = EMERGENCY_RE.test(text);
 
         try {
-            setChatError(null);
-            const data = await apiFetch<{ response?: string; emergency?: boolean; response_emergency?: boolean }>(
-                "/chatbot/api",
-                {
-                    method: 'POST',
-                    body: { message: text, share_chart: shareChart },
-                }
-            );
+            const result = await pollChat(text, shareChartFlag, { signal: controller.signal });
             // The server may also flag an emergency even when the local
             // keyword check missed it; honor whichever fired.
-            const emergency = emergencyDetected || Boolean(data.emergency ?? data.response_emergency);
+            const emergency = emergencyDetected || Boolean(result.emergency);
             const botMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: 'bot',
-                text: data.response || "I didn't quite catch that.",
+                text: result.response,
                 timestamp: new Date(),
                 emergency,
             };
-
             setMessages((prev) => [...prev, botMessage]);
 
             // Play the TTS audio when enabled. The endpoint may 503 when the
@@ -286,7 +275,26 @@ const Chatbot: React.FC = () => {
                 speak(botMessage.text);
             }
         } catch (err) {
+            // A user-initiated cancel (panel closed) is not an error.
+            if (err instanceof DOMException && err.name === 'AbortError') return;
             if (err instanceof ApiError && err.status === 401) return; // apiFetch already redirected to /login
+            if (err instanceof ChatJobFailedError || err instanceof ChatJobPendingError) {
+                // The queued answer failed (or is still running past the
+                // poll budget): surface a retry bubble that re-sends the
+                // user's original message.
+                const retryMessage: Message = {
+                    id: (Date.now() + 1).toString(),
+                    sender: 'bot',
+                    text:
+                        err instanceof ChatJobPendingError
+                            ? err.message
+                            : "The assistant could not finish that answer.",
+                    timestamp: new Date(),
+                    retryText: text,
+                };
+                setMessages((prev) => [...prev, retryMessage]);
+                return;
+            }
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: 'bot',
@@ -298,6 +306,34 @@ const Chatbot: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleSend = async () => {
+        if (!input.trim()) return;
+        // Enforce the same 8 KB cap as the backend so a rejected message never
+        // reaches the wire; the UI also blocks the send button above the cap.
+        const text = input.slice(0, MAX_MESSAGE_LENGTH).trim();
+        if (text.length >= MAX_MESSAGE_LENGTH) {
+            setChatError(`Messages are capped at ${MAX_MESSAGE_LENGTH} characters. Please shorten your message.`);
+            return;
+        }
+
+        const userMessage: Message = {
+            id: Date.now().toString(),
+            sender: 'user',
+            text,
+            timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, userMessage]);
+        setInput('');
+        void runChat(text, shareChart);
+    };
+
+    // Retry affordance for a failed/pending queued answer: re-send the same
+    // user text without duplicating the user bubble.
+    const handleRetry = (originalText: string) => {
+        if (!originalText) return;
+        void runChat(originalText, shareChart);
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -440,9 +476,19 @@ const Chatbot: React.FC = () => {
                                             "px-5 py-3.5 text-[15px] leading-relaxed shadow-sm",
                                             msg.sender === 'user'
                                                 ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm"
-                                                : "bg-white text-slate-700 border border-slate-100 rounded-2xl rounded-tl-sm"
+                                                : msg.retryText
+                                                    ? "bg-amber-50 text-slate-700 border border-amber-200 rounded-2xl rounded-tl-sm"
+                                                    : "bg-white text-slate-700 border border-slate-100 rounded-2xl rounded-tl-sm"
                                         )}>
                                             <p className="whitespace-pre-wrap">{msg.text}</p>
+                                            {msg.retryText && !isLoading && (
+                                                <button
+                                                    onClick={() => handleRetry(msg.retryText!)}
+                                                    className="mt-2 text-xs font-bold text-amber-700 underline underline-offset-2 hover:text-amber-800"
+                                                >
+                                                    Try again
+                                                </button>
+                                            )}
                                         </div>
                                         <span className="text-[10px] font-medium text-slate-400 px-1">
                                             {msg.sender === 'bot' ? 'HealthTrack+ AI • ' : 'You • '}
@@ -554,6 +600,7 @@ const Chatbot: React.FC = () => {
                                     whileTap={{ scale: 0.95 }}
                                     disabled={!input.trim() || isLoading || input.length >= MAX_MESSAGE_LENGTH}
                                     onClick={handleSend}
+                                    aria-label="Send message"
                                     className={cn(
                                         "p-3.5 rounded-xl shadow-md transition-all duration-300 flex items-center justify-center",
                                         input.trim() && input.length < MAX_MESSAGE_LENGTH
@@ -580,6 +627,7 @@ const Chatbot: React.FC = () => {
                 whileHover={{ scale: 1.05, rotate: isOpen ? 90 : 0 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setIsOpen(!isOpen)}
+                aria-label={isOpen ? "Close assistant" : "Open assistant"}
                 className={cn(
                     "pointer-events-auto h-16 w-16 rounded-2xl shadow-2xl transition-all duration-300 flex items-center justify-center ring-4 ring-white/20 backdrop-blur-sm",
                     isOpen

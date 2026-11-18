@@ -52,7 +52,7 @@ func BuildRouter(db *database.DB, cfg *config.Config, mail *email.Service) *gin.
 	CoreRouter(coreAPI, db, cfg, authSvc)
 
 	chatAPI := r.Group("/chatbot")
-	ChatbotRouter(chatAPI, cfg, authSvc)
+	ChatbotRouter(chatAPI, cfg, authSvc, prod)
 
 	adminAPI := r.Group("/admin-panel/api")
 	AdminRouter(adminAPI, db, cfg, authSvc)
@@ -132,9 +132,11 @@ func AdminRouter(g gin.IRouter, db *database.DB, cfg *config.Config, authSvc *au
 
 // ChatbotRouter registers the /chatbot routes. Both run behind the auth
 // module's AuthRequired + a per-user AI quota (finding S3), so AI spend is
-// bounded per account and anonymous callers can't reach the provider.
-func ChatbotRouter(g gin.IRouter, cfg *config.Config, authSvc *auth.Service) {
+// bounded per account and anonymous callers can't reach the provider. The
+// producer offloads the chat model call to the ai:chat task when Redis is
+// configured; TTS stays synchronous for now (recorded limitation).
+func ChatbotRouter(g gin.IRouter, cfg *config.Config, authSvc *auth.Service, prod *queue.Producer) {
 	gate := authSvc.AuthRequired()
-	g.POST("/api", gate, chatbotAPI(cfg, authSvc))
+	g.POST("/api", gate, chatbotAPI(cfg, authSvc, prod))
 	g.POST("/api/tts", gate, chatbotTTS(cfg, authSvc))
 }

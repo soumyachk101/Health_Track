@@ -72,8 +72,8 @@ const recordsScope = "records"
 
 // uploadTTL / downloadTTL are the pinned presign windows (ADR-0002).
 const (
-	uploadTTL     = 5 * time.Minute
-	downloadTTL   = 2 * time.Minute
+	uploadTTL   = 5 * time.Minute
+	downloadTTL = 2 * time.Minute
 )
 
 // fileRow is a medical_files row in map-scan form.

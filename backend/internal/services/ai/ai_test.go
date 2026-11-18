@@ -39,8 +39,8 @@ func TestChatNoKey(t *testing.T) {
 func TestTTSPlaceholder(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
-		name  string
-		key   string
+		name string
+		key  string
 	}{
 		{"empty sarvam key", ""},
 		{"placeholder sarvam key", "your_sarvam_api_key_here"},

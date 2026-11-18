@@ -48,6 +48,8 @@ type handlers struct {
 func registerTasks(mux *asynq.ServeMux, h *handlers) {
 	mux.HandleFunc(queue.TypeEmailSend, h.handleEmailSend)
 	mux.HandleFunc(queue.TypeAnalyzeDocument, h.handleAnalyzeDocument)
+	mux.HandleFunc(queue.TypeAiChat, h.handleAiChat)
+	mux.HandleFunc(queue.TypeAiTTS, h.handleAiTTS)
 	mux.HandleFunc(queue.TypeCleanupStaleFile, h.handleCleanupStale)
 	mux.Use(failureStamp(h.db))
 }
@@ -168,6 +170,62 @@ func (h *handlers) handleAnalyzeDocument(ctx context.Context, t *asynq.Task) err
 	return queue.MarkJobResult(ctx, h.db, key, result)
 }
 
+// handleAiChat runs the chat completion off the HTTP path and stores the
+// reply on the ledger row ({"response": ...}) for GET /jobs/:id. The payload
+// carries the pinned {message, share_chart, chart, instruction}; the prompt
+// is rebuilt through queue.BuildChatPrompt so a queued reply is byte-identical
+// to what the inline degrade path would have sent. On success the row is
+// stamped completed + result; on failure the return error lets the
+// failureStamp middleware mark it failed/dead with the last_error.
+func (h *handlers) handleAiChat(ctx context.Context, t *asynq.Task) error {
+	var p queue.AiChatPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("ai:chat: bad payload: %w", err)
+	}
+	key := taskKey(ctx)
+	if err := markProcessing(ctx, h.db, key, retryCount(ctx)); err != nil {
+		return err
+	}
+	instruction := p.Instruction
+	if instruction == "" {
+		// The pinned general-assistant instruction is the fallback: an older
+		// producer that omitted it still gets the safe policy, never a
+		// medical-assistant prompt.
+		instruction = ai.AssistantInstruction
+	}
+	text, err := ai.ChatWithInstruction(ctx, h.cfg, queue.BuildChatPrompt(p), instruction)
+	if err != nil {
+		return fmt.Errorf("ai:chat: model call: %w", err)
+	}
+	if err := markCompleted(ctx, h.db, key); err != nil {
+		return err
+	}
+	result, _ := json.Marshal(map[string]string{"response": text})
+	return queue.MarkJobResult(ctx, h.db, key, result)
+}
+
+// handleAiTTS synthesizes speech off the HTTP path and stores the audio
+// URI on the ledger row ({"audio": ...}).
+func (h *handlers) handleAiTTS(ctx context.Context, t *asynq.Task) error {
+	var p queue.AiTTSPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("ai:tts: bad payload: %w", err)
+	}
+	key := taskKey(ctx)
+	if err := markProcessing(ctx, h.db, key, retryCount(ctx)); err != nil {
+		return err
+	}
+	audioURI, err := ai.TTS(ctx, h.cfg, p.Text)
+	if err != nil {
+		return fmt.Errorf("ai:tts: synthesis: %w", err)
+	}
+	if err := markCompleted(ctx, h.db, key); err != nil {
+		return err
+	}
+	result, _ := json.Marshal(map[string]string{"audio": audioURI})
+	return queue.MarkJobResult(ctx, h.db, key, result)
+}
+
 // handleCleanupStale purges pending uploads older than the threshold:
 // delete the R2 object, mark the row deleted. Both steps are idempotent.
 func (h *handlers) handleCleanupStale(ctx context.Context, t *asynq.Task) error {
@@ -249,4 +307,3 @@ func redactEmail(addr string) string {
 	}
 	return addr[:1] + "***" + addr[at:]
 }
-

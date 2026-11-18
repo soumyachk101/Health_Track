@@ -107,6 +107,10 @@ type JobRecord struct {
 	LastError  string    `json:"last_error,omitempty"`
 	EnqueuedAt time.Time `json:"enqueued_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	// Result is the raw JSON text of the row's result column ("" when
+	// NULL). The jobs endpoint parses it into the response's "result"
+	// field; kept raw here so the queue package stays stdlib-only.
+	Result string `json:"-"`
 }
 
 // Enqueue pushes task and records the ledger row. key is the idempotency
@@ -206,7 +210,7 @@ func (p *Producer) JobByIdempotencyKey(ctx context.Context, key string) (*JobRec
 	}
 	row, err := p.db.QueryOne(ctx, `
 		SELECT task_id, type, COALESCE(owner_id, 0), status, attempts,
-		       COALESCE(last_error, ''), enqueued_at, updated_at
+		       COALESCE(last_error, ''), result, enqueued_at, updated_at
 		FROM background_jobs WHERE idempotency_key = $1`, key)
 	if err != nil {
 		return nil, err
@@ -225,7 +229,7 @@ func (p *Producer) JobByTaskID(ctx context.Context, taskID string) (*JobRecord, 
 	}
 	row, err := p.db.QueryOne(ctx, `
 		SELECT task_id, type, COALESCE(owner_id, 0), status, attempts,
-		       COALESCE(last_error, ''), enqueued_at, updated_at
+		       COALESCE(last_error, ''), result, enqueued_at, updated_at
 		FROM background_jobs WHERE task_id = $1`, taskID)
 	if err != nil {
 		return nil, err
@@ -236,19 +240,29 @@ func (p *Producer) JobByTaskID(ctx context.Context, taskID string) (*JobRecord, 
 	return scanJobRow(row)
 }
 
+// personalTaskTypes carry user content that must not enter the audit
+// store: mail (recipient + one-time secret) and the live AI surfaces
+// (chat messages / TTS text). Their task bodies stay in Redis for the
+// worker; the ledger row stores an empty payload object.
+var personalTaskTypes = map[string]bool{
+	TypeEmailSend: true,
+	TypeAiChat:    true,
+	TypeAiTTS:     true,
+}
+
 // insertJobRow upserts the ledger row on the idempotency key. The owner is
 // stamped so the status endpoint can reject a foreign poller; system
-// enqueues (owner 0) store NULL (owner_id is an FK to users). Mail task
-// payloads carry a recipient address + one-time secret, so they are NOT
-// persisted to Postgres (Redis keeps them for the worker; the ledger
-// stores an empty object instead) — no PII in the audit store.
+// enqueues (owner 0) store NULL (owner_id is an FK to users). Personal
+// task payloads (see personalTaskTypes) are NOT persisted to Postgres —
+// Redis keeps them for the worker; the ledger stores an empty object
+// instead — no PII in the audit store.
 func insertJobRow(ctx context.Context, db *database.DB, row *JobRecord, key string, task *asynq.Task) error {
 	var owner any
 	if row.OwnerID != 0 {
 		owner = row.OwnerID
 	}
 	var payload string
-	if task != nil && task.Type() == TypeEmailSend {
+	if task != nil && personalTaskTypes[task.Type()] {
 		payload = "{}"
 	} else {
 		payload = string(task.Payload())
