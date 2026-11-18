@@ -116,3 +116,16 @@ pause 60s then continue. Nobody commits or pushes — the human commits at the e
 - Pacing: ~15 tool calls/min each (shared 60 RPM). gstack skills: every CLI
   runs /verify at lane end; CLI D runs /ship (stop after PR). No other gstack
   skills. CLIs A/B/C leave work uncommitted; CLI D ships it.
+
+## 2026-11-18 13:3x — MAIN — 6-CLI lane map + revised wave-4 prompts
+- Owner is running SIX CLIs this wave, not four. Revised prompts in
+  docs/CLI_PROMPTS_WAVE4.md (6-lane version supersedes the 4-lane one in
+  this file).
+- New lanes: 1 = chat-queue backend, 2 = cache tests, 3 = backend hygiene
+  (gofmt×4 + uploads + DSN note), 4 = frontend chat-poll + AI-UI tests,
+  5 = docs + read-only audit, 6 = gate + /verify + /ship (only committer).
+- RPM math: shared 60 calls/min ÷ 6 = ~10 tool calls/min per CLI; pause 60s
+  on any rate-limit. If total traffic looks hot, run CLIs 1-2-3 first, then
+  4-5, and CLI 6 last.
+- All 5 wave-3 defects remain open (verified 13:3x): cache_test.go, gofmt
+  ×5, uploads gitignore, AI-UI specs, DSN note. Build green, tree idle.
