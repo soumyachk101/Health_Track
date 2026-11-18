@@ -28,6 +28,8 @@ type Cache interface {
 	SetNX(ctx context.Context, key string, val any, ttl time.Duration) (bool, error)
 	Del(ctx context.Context, keys ...string) error
 	Incr(ctx context.Context, key string, ttl time.Duration) (int64, error)
+	SAdd(ctx context.Context, key string, members []string, ttl time.Duration) error
+	SMembers(ctx context.Context, key string) ([]string, error)
 	Eval(ctx context.Context, script string, keys []string, args ...any) (any, error)
 	Ping(ctx context.Context) error
 }
@@ -49,6 +51,30 @@ func NewRedisCache(redisURL string) (*RedisCache, error) {
 		return nil, err
 	}
 	return &RedisCache{client: redis.NewClient(opts)}, nil
+}
+
+// New returns the storage backend for a deployment: Redis when redisURL is
+// set, otherwise a process-local [MemCache] (single instance, dev + tests).
+// A bad URL is an error: an explicitly configured backend must not
+// silently degrade.
+func New(redisURL string) (Cache, error) {
+	if redisURL == "" {
+		return NewMemCache(), nil
+	}
+	return NewRedisCache(redisURL)
+}
+
+// --- per-user quota counters (ADR-0001 chatbot/TTS guard, finding S3) ---
+//
+// QuotaCheck is the fixed-window counter the AI endpoints use: at most
+// limit calls per user per window, counted in one atomic INCR so parallel
+// instances share the number.
+func QuotaCheck(ctx context.Context, c Cache, userID int64, kind string, window time.Duration, limit int) (bool, error) {
+	n, err := c.Incr(ctx, "ai_quota:"+kind+":"+itoa(userID), window)
+	if err != nil {
+		return false, err
+	}
+	return n <= int64(limit), nil
 }
 
 // Client exposes the underlying go-redis client for package-internal tests
@@ -91,6 +117,26 @@ func (r *RedisCache) Incr(ctx context.Context, key string, ttl time.Duration) (i
 		_ = r.client.Expire(ctx, key, ttl).Err()
 	}
 	return n, nil
+}
+
+// SAdd registers members of a set and refreshes its TTL (so the index
+// lives as long as the newest member).
+func (r *RedisCache) SAdd(ctx context.Context, key string, members []string, ttl time.Duration) error {
+	if len(members) == 0 {
+		return nil
+	}
+	args := make([]any, len(members))
+	for i, m := range members {
+		args[i] = m
+	}
+	if err := r.client.SAdd(ctx, key, args...).Err(); err != nil {
+		return err
+	}
+	return r.client.Expire(ctx, key, ttl).Err()
+}
+
+func (r *RedisCache) SMembers(ctx context.Context, key string) ([]string, error) {
+	return r.client.SMembers(ctx, key).Result()
 }
 
 func (r *RedisCache) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {

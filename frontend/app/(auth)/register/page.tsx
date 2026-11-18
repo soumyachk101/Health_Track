@@ -7,13 +7,9 @@ import { Label } from "@/components/ui/label"
 import { Loader2, User, Mail, Lock, Eye, EyeOff, ArrowRight, Sparkles, ShieldCheck, Zap, Stethoscope, Building2, AlertCircle, CheckCircle2, Circle, Phone, BadgeCheck, Briefcase } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { cn, syncSessionFromSupabase } from "@/lib/utils"
-import {
-    supaSignUp,
-    SupabaseNotConfiguredError,
-} from "@/lib/supabase"
-import { apiRegisterProfile } from "@/lib/api"
-import { roleHomePath } from "@/components/Providers"
+import { cn } from "@/lib/utils"
+import { apiRegister, ApiError } from "@/lib/api"
+
 import { motion, AnimatePresence } from "framer-motion"
 
 function RegisterForm() {
@@ -124,61 +120,31 @@ function RegisterForm() {
             : formData.role === 'provider' ? (formData.serviceCategory || 'pharmacy')
             : ''
 
-        // Supabase is the identity source of truth: the account + all
-        // provisioning fields land in the Supabase user_metadata.
+        // The Pure Go backend creates the account with every provisioning
+        // field in a single request. Registration is enumeration-safe: it
+        // always returns the same "check your email" state (email + OTP
+        // verification), so we land on the inbox state.
         try {
-            const { session, user } = await supaSignUp({
+            const result = await apiRegister({
+                username: formData.username.trim(),
                 email: formData.email.trim(),
                 password: formData.password,
-                options: {
-                    data: {
-                        role: formData.role,
-                        provider_type: providerType,
-                        business_name: formData.businessName,
-                        license_number: formData.licenseNumber,
-                        specialization: formData.specialization,
-                        first_name: nameParts[0] || "",
-                        last_name: nameParts.slice(1).join(' ') || "",
-                        username: formData.username.trim(),
-                        phone: formData.phoneNumber.trim(),
-                    },
-                },
-            })
-
-            // Best-effort: mirror the user into the Go backend's profiles
-            // table with the app-specific fields. A 404 (endpoint not
-            // deployed yet) logs and continues — the trigger-based profile
-            // row already exists server-side.
-            await apiRegisterProfile({
-                email: formData.email.trim(),
-                role: formData.role,
-                provider_type: providerType,
-                business_name: formData.businessName,
-                license_number: formData.licenseNumber,
-                specialization: formData.specialization,
                 first_name: nameParts[0] || "",
                 last_name: nameParts.slice(1).join(' ') || "",
+                role: formData.role,
+                provider_type: providerType || undefined,
+                business_name: formData.businessName || undefined,
+                license_number: formData.licenseNumber || undefined,
+                specialization: formData.specialization || undefined,
             })
-
-            if (session && user) {
-                // Email confirmation is OFF for this Supabase project: the
-                // account is live right now. Log straight in and route home.
-                const role = formData.role
-                syncSessionFromSupabase(session.access_token, role)
-                router.push(roleHomePath(role))
-            } else {
-                // Confirmation ON: no session yet; show the inbox state.
-                setIsSuccess(true)
-            }
+            // `result.success` is always true on a 201; surface the message.
+            void result
+            setIsSuccess(true)
         } catch (err: unknown) {
             const message =
-                err instanceof SupabaseNotConfiguredError
-                    ? "Account creation is unavailable right now (auth not configured). Please try again shortly."
-                    : err instanceof Error
-                        ? (err.message || "Could not create your account. Please try again.")
-                        : "Could not create your account. Please try again."
-            // Surface Supabase's friendly errors (e.g. "User already registered",
-            // "Password should be at least 6 characters") instead of crashing.
+                err instanceof ApiError
+                    ? (err.message || "Could not create your account. Please try again.")
+                    : "Could not create your account. Please try again."
             setError(message)
             // Preserve the user's input on a recoverable error.
             errorBannerRef.current?.focus()

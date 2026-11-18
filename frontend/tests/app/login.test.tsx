@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -7,44 +7,37 @@ vi.mock("next/navigation", () => ({
   useRouter: vi.fn(() => ({ push: vi.fn() })),
   useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
-// Keep framer-motion + next/link working for real.
 
-// Mock the Supabase helpers: sign-in resolves a Supabase session whose
-// user_metadata carries the app role. The rest of the module (roleOfSupaUser,
-// error classes) runs for real via importActual.
-vi.mock("@/lib/supabase", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/supabase")>("@/lib/supabase");
+// Mock the central cookie client: apiLogin is a controllable vi.fn; the rest
+// of the module (ApiError, roleHomePath re-export, ...) runs for real.
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
-    supaSignIn: vi.fn(),
-    supaGoogleSignIn: vi.fn(),
-    supaResendVerification: vi.fn(),
+    apiLogin: vi.fn(),
+    apiGoogleLogin: vi.fn(),
   };
 });
 
-// Spy on the localStorage sync so we can assert the token was persisted.
-vi.mock("@/lib/utils", () => {
-  const actual = vi.importActual("@/lib/utils") as Promise<typeof import("@/lib/utils")>;
-  return actual.then((mod) => ({ ...mod, syncSessionFromSupabase: vi.fn() }));
-});
-
-// The role-unknown path would call apiProfile; resolve it for safety.
-vi.mock("@/lib/api", () => ({
-  apiProfile: vi.fn(async () => ({ user: {}, messages: [] })),
-}));
-
 import { useRouter } from "next/navigation";
 import Login from "@/app/(auth)/login/page";
-import { supaSignIn } from "@/lib/supabase";
-import { syncSessionFromSupabase } from "@/lib/utils";
+import { apiLogin, ApiError } from "@/lib/api";
 
-describe("login page submit flow (Supabase)", () => {
-  it("signs in with Supabase, syncs the session token, and routes to the role home", async () => {
-    // user_metadata.role present -> applyAuth uses it directly (no profile fetch).
-    (supaSignIn as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      accessToken: "supa-tok",
-      user: { id: "u1", email: "doc@h.com", user_metadata: { role: "patient" } },
-    });
+function mockLogin(value: unknown) {
+  (apiLogin as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(value);
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+  window.history.replaceState(null, "", "/login");
+  vi.mocked(apiLogin).mockClear();
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("login page submit flow (Pure Go cookie auth)", () => {
+  it("signs in via POST /api/v1/auth/login and routes to the role home", async () => {
+    mockLogin({ success: true, user: { role: "patient", status: "active" } });
     const push = vi.fn();
     (useRouter as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ push });
 
@@ -58,56 +51,55 @@ describe("login page submit flow (Supabase)", () => {
     await user.click(screen.getByRole("button", { name: /authenticate/i }));
 
     await waitFor(() => {
-      expect(supaSignIn).toHaveBeenCalledWith("doc@h.com", "pass123");
-      expect(syncSessionFromSupabase).toHaveBeenCalledWith("supa-tok", "patient");
+      expect(apiLogin).toHaveBeenCalledWith("doc@h.com", "pass123");
     });
     // patient role resolves to the dashboard home.
     expect(push).toHaveBeenCalledWith("/dashboard");
   });
 
-  it("surfaces an 'email not confirmed' error as the verification panel + resend", async () => {
-    const { AuthError } = await import("@/lib/supabase");
-    // A real AuthError instance so the page's `err instanceof AuthError`
-    // branch (and its .code / message) is exercised for real.
-    const err = new AuthError("Email not confirmed", 400, "email_not_confirmed");
-    (supaSignIn as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(err);
-
+  it("surfaces a wrong-credentials 401 as a friendly error (no redirect)", async () => {
+    (apiLogin as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ApiError("Invalid credentials", 401, { success: false })
+    );
     const push = vi.fn();
     (useRouter as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ push });
 
     const { baseElement } = render(<Login />);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Identify Yourself"), "doc@h.com");
-    await user.type(screen.getByLabelText("Security Key"), "pass123");
+    await user.type(screen.getByLabelText("Security Key"), "wrong");
     await user.click(screen.getByRole("button", { name: /authenticate/i }));
 
     await waitFor(() => {
-      expect(baseElement).toHaveTextContent(/requires verification/i);
+      expect(baseElement).toHaveTextContent(/incorrect username or password/i);
     });
-    // The resend button is now visible inside the amber verification panel.
-    expect(screen.getByRole("button", { name: /resend link/i })).toBeInTheDocument();
-    // No role routing happened on the error path.
+    // No routing on the error path.
     expect(push).not.toHaveBeenCalled();
   });
 
-  it("redirects to the Supabase OAuth URL for the Google button", async () => {
-    const { supaGoogleSignIn } = await import("@/lib/supabase");
-    (supaGoogleSignIn as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      url: "https://supabase.auth/oauth",
-    });
-    // jsdom's window.location.href is a non-redefinable property, so swap the
-    // whole location object (as stubLocation does) to observe the navigation.
-    const { stubLocation } = await import("../helpers/location");
-    const loc = stubLocation("/login");
-
+  it("falls back to /login routing when the server omits a role", async () => {
+    // No user in the body -> the page defaults to 'patient' home.
+    mockLogin({ success: true });
     const push = vi.fn();
     (useRouter as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ push });
 
     render(<Login />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /sign in with google/i }));
+    await user.type(screen.getByLabelText("Identify Yourself"), "doc@h.com");
+    await user.type(screen.getByLabelText("Security Key"), "pass123");
+    await user.click(screen.getByRole("button", { name: /authenticate/i }));
 
-    await waitFor(() => expect(loc.href).toBe("https://supabase.auth/oauth"));
-    vi.unstubAllGlobals();
+    await waitFor(() => expect(apiLogin).toHaveBeenCalled());
+    expect(push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("blocks an empty username with a field error", async () => {
+    render(<Login />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Security Key"), "pass123");
+    await user.click(screen.getByRole("button", { name: /authenticate/i }));
+
+    expect(await screen.findByText("Please enter your username or email.")).toBeInTheDocument();
+    expect(apiLogin).not.toHaveBeenCalled();
   });
 });

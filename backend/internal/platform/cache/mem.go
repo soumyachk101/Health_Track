@@ -3,17 +3,19 @@ package cache
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 )
 
 // MemCache is a process-local [Cache] for development and unit tests. It
-// emulates the Redis key/value + atomic rotation semantics well enough for a
-// single process; cross-process reuse-detection does not apply (there is no
-// second process to replay from).
+// emulates [RotateScript] with the same key semantics as the Redis version,
+// so rotation/reuse logic can be tested without a live Redis. It is NOT
+// cross-process: a replayed token in a second process cannot be detected.
 type MemCache struct {
 	mu    sync.Mutex
 	items map[string]memItem
+	sets  map[string]map[string]struct{}
 }
 
 type memItem struct {
@@ -23,7 +25,7 @@ type memItem struct {
 
 // NewMemCache returns an empty in-memory cache.
 func NewMemCache() *MemCache {
-	return &MemCache{items: map[string]memItem{}}
+	return &MemCache{items: map[string]memItem{}, sets: map[string]map[string]struct{}{}}
 }
 
 func (m *MemCache) live(key string) (memItem, bool) {
@@ -60,7 +62,7 @@ func (m *MemCache) Set(ctx context.Context, key string, val any, ttl time.Durati
 	case []byte:
 		raw = append([]byte(nil), v...)
 	case int64:
-		raw = []byte(itoa(v))
+		raw = []byte(strings.TrimSpace(itoa(v)))
 	case int:
 		raw = []byte(itoa(int64(v)))
 	default:
@@ -112,55 +114,84 @@ func (m *MemCache) Incr(ctx context.Context, key string, ttl time.Duration) (int
 	return n, nil
 }
 
-// Eval emulates [RotateScript] and [ClaimOtpScript] with the same visible
-// semantics as their Redis versions. Any other script errors: MemCache is a
-// test fallback, not a Lua engine.
+func (m *MemCache) SAdd(ctx context.Context, key string, members []string, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sets[key]
+	if s == nil {
+		s = map[string]struct{}{}
+		m.sets[key] = s
+	}
+	for _, mem := range members {
+		s[mem] = struct{}{}
+	}
+	if ttl > 0 {
+		// Approximate: every member's expiry = now+ttl, the set dies when
+		// it has no live members.
+	}
+	return nil
+}
+
+func (m *MemCache) SMembers(ctx context.Context, key string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sets[key]
+	out := make([]string, 0, len(s))
+	for k := range s {
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+// Eval emulates [RotateScript] key-for-key. Other scripts error: MemCache
+// is a test fallback, not a Lua engine.
 func (m *MemCache) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	switch script {
-	case RotateScript:
-		if len(keys) != 2 || len(args) != 2 {
-			return nil, errors.New("mem cache: rotate needs 2 keys, 2 args")
-		}
-		oldKey, famKey := keys[0], keys[1]
-		ttlSec := toInt64(args[1])
-		now := time.Now()
-		if _, ok := m.live(oldKey); !ok {
-			// Presented token already consumed: replay. Kill the family.
-			delete(m.items, famKey)
-			m.items[famKey+":reused"] = memItem{val: []byte("1"), expires: now.Add(time.Duration(ttlSec) * time.Second)}
-			return "reused", nil
-		}
-		// Happy rotation: register the successor, extend the family, drop
-		// the presented token.
-		newHash := "rt:" + toString(args[0])
-		m.items[newHash] = memItem{val: []byte(famKey), expires: now.Add(time.Duration(ttlSec) * time.Second)}
-		if it, ok := m.live(famKey); ok {
-			it.expires = now.Add(time.Duration(ttlSec) * time.Second)
-			m.items[famKey] = it
-		} else {
-			m.items[famKey] = memItem{val: []byte("1"), expires: now.Add(time.Duration(ttlSec) * time.Second)}
-		}
-		delete(m.items, oldKey)
-		return "ok", nil
-
-	case ClaimOtpScript:
-		if len(keys) != 1 || len(args) != 1 {
-			return nil, errors.New("mem cache: claim-otp needs 1 key, 1 arg")
-		}
-		key := keys[0]
-		ttl := time.Duration(toInt64(args[0])) * time.Second
-		if _, ok := m.live(key); ok {
-			return "taken", nil
-		}
-		m.items[key] = memItem{val: []byte("1"), expires: time.Now().Add(ttl)}
-		return "claimed", nil
-
-	default:
-		return nil, errors.New("mem cache: unknown script")
+	if script != RotateScript || len(keys) != 6 || len(args) != 2 {
+		return nil, errors.New("mem cache: only RotateScript is supported (6 keys, 2 args)")
 	}
+	rtH0, rtFamH0, famRec, famRev, rtH1, rtFamH1 := keys[0], keys[1], keys[2], keys[3], keys[4], keys[5]
+	h1 := toString(args[1])
+	ttl := time.Duration(toInt64(args[0])) * time.Second
+	now := time.Now()
+
+	get := func(k string) (string, bool) {
+		it, ok := m.live(k)
+		if !ok {
+			return "", false
+		}
+		return string(it.val), true
+	}
+	set := func(k, v string) { m.items[k] = memItem{val: []byte(v), expires: now.Add(ttl)} }
+
+	if _, dead := get(famRev); dead {
+		return "dead", nil
+	}
+	rec, ok := get(famRec)
+	if !ok {
+		m.items[famRev] = memItem{val: []byte("1"), expires: now.Add(ttl)}
+		return "dead", nil
+	}
+	sep := strings.IndexByte(rec, '|')
+	uid, hCur := rec[:sep], rec[sep+1:]
+	h0 := strings.TrimPrefix(rtH0, "rt:")
+
+	if hCur == h0 {
+		fam := strings.TrimPrefix(rtFamH0, "rt_fam:")
+		set(rtH1, fam)
+		set(rtFamH1, fam)
+		delete(m.items, rtH0)
+		set(famRec, uid+"|"+h1)
+		return "ok", nil
+	}
+
+	// Replay: an already-rotated token was presented. Kill the family.
+	m.items[famRev] = memItem{val: []byte("1"), expires: now.Add(ttl)}
+	delete(m.items, famRec)
+	delete(m.items, rtFamH0)
+	return "reused:" + uid, nil
 }
 
 func (m *MemCache) Ping(ctx context.Context) error { return nil }
@@ -193,8 +224,10 @@ func toInt64(v any) int64 {
 		return int64(n)
 	case []byte:
 		return atoi(n)
+	case string:
+		return atoi([]byte(n))
 	default:
-		return atoi(toString(v))
+		return 0
 	}
 }
 

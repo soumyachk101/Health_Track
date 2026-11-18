@@ -7,8 +7,7 @@ import { PageError, PageSkeleton, PageEmpty } from "@/components/ui/page-states"
 import { Pill, Plus, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 interface Medicine {
     name: string
@@ -29,7 +28,6 @@ export default function Medicines() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [reloadKey, setReloadKey] = useState(0)
-    const router = useRouter()
 
     const refetch = useCallback(() => {
         setError(null)
@@ -42,37 +40,15 @@ export default function Medicines() {
         const fetchData = async () => {
             setLoading(true)
             setError(null)
-
-            const token = localStorage.getItem('token')
-            if (!token) {
-                router.push('/login')
-                return
-            }
-
             try {
-                const response = await fetch(getApiUrl("/api/medicines/"), {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
+                const result = await apiFetch<MedicinesData>("/api/medicines/", {
+                    signal: controller.signal,
                 })
-
-                if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem('token')
-                    router.push('/login')
-                    return
-                }
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch medicines data')
-                }
-
-                const result = await response.json()
                 setData(result)
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     if (err.name === 'AbortError') return
+                    if (err instanceof ApiError && err.status === 401) return
                     console.error("Medicines Fetch Error:", err)
                     setError(err.message || "Failed to load medicines")
                 } else {
@@ -88,7 +64,7 @@ export default function Medicines() {
 
         fetchData()
         return () => controller.abort()
-    }, [router, reloadKey])
+    }, [reloadKey])
 
     if (loading) {
         return (

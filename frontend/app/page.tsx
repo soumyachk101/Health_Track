@@ -5,12 +5,12 @@ import Link from "next/link"
 import {
     Activity, ArrowRight, Pill, Brain, Menu, X
 } from "lucide-react"
-import { cn, getStoredToken } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { roleHomePath, useAuth } from "@/components/Providers"
 import { motion, useTransform, useSpring } from 'framer-motion'
 
 export default function Landing() {
-    const { token, profile, role } = useAuth()
+    const { isAuthenticated, status, role } = useAuth()
     const [scrolled, setScrolled] = useState(false)
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
@@ -39,20 +39,13 @@ export default function Landing() {
         }
     }, [mouseX, mouseY])
 
-    const stored = typeof window !== "undefined" ? getStoredToken() : null
-    const sessionRole = role ?? profile?.user?.role
-
-    // Role-gated redirect on the root route: a stored session routes to the
-    // role's home (once the profile fetch confirms it, or via the stored
-    // role); an anonymous visitor lands on /login.
+    // Session-gated redirect on the root route: an authenticated session
+    // routes to the role's home; an anonymous visitor lands on /login.
     useEffect(() => {
-        const hasStoredSession = !!stored
-        if (hasStoredSession && !token) return // still hydrating; retry when token arrives
-        const target = hasStoredSession
-            ? (sessionRole ? roleHomePath(sessionRole) : "/login")
-            : "/login"
+        if (!status) return // session fetch still in flight
+        const target = isAuthenticated && role ? roleHomePath(role) : "/login"
         window.location.replace(target)
-    }, [token, sessionRole, stored])
+    }, [isAuthenticated, role, status])
 
     const features = [
         {

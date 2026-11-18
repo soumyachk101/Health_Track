@@ -153,7 +153,10 @@ func adminUserAction(db *database.DB) gin.HandlerFunc {
 		var b struct {
 			Action string `json:"action"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		userID := c.Param("user_id")
 

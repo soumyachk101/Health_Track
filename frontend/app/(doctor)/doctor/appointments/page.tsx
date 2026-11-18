@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Calendar, Clock, FileText, Users, Settings, Home, Video, AlertCircle, Inbox, Loader2 } from 'lucide-react'
-import { cn, getStoredToken, clearSession } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 const doctorNavItems = [
     { icon: Home, label: "Dashboard", href: "/doctor/dashboard" },
@@ -33,33 +32,18 @@ export default function DoctorAppointments() {
     const [appointments, setAppointments] = useState<Appointment[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
-    const router = useRouter()
 
     const fetchAppointments = useCallback(async () => {
-        const token = getStoredToken()
-        if (!token) {
-            router.push('/login')
-            return
-        }
         try {
             setError(null)
-            const response = await fetch(getApiUrl("/api/appointments"), {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-
-            if (response.status === 401 || response.status === 403) {
-                clearSession()
-                router.push('/login')
-                return
-            }
-
-            const data = await response.json()
-            if (data.success) {
-                setAppointments(data.appointments)
-            } else {
-                throw new Error(data.message || 'Failed to load appointments')
-            }
+            // Cookie auth + silent 401->refresh->retry handled centrally; a
+            // dead session already redirects to /login inside apiFetch.
+            const data = await apiFetch<{ success?: boolean; appointments?: Appointment[] }>(
+                "/api/appointments"
+            )
+            setAppointments(data.appointments ?? [])
         } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 401) return // redirecting
             if (err instanceof Error) {
                 console.error("Failed to fetch appointments:", err.message)
                 setError(err.message)
@@ -70,7 +54,7 @@ export default function DoctorAppointments() {
         } finally {
             setIsLoading(false)
         }
-    }, [router])
+    }, [])
 
     useEffect(() => {
         fetchAppointments()
@@ -78,22 +62,13 @@ export default function DoctorAppointments() {
 
     const handleAction = async (id: number, action: 'accept' | 'reject' | 'complete') => {
         try {
-            const token = getStoredToken()
-
-            const response = await fetch(getApiUrl(`/api/appointments/${id}/action`), {
+            await apiFetch(`/api/appointments/${id}/action`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ action })
+                body: { action },
             })
-
-            const data = await response.json()
-            if (data.success) {
-                fetchAppointments() 
-            }
+            fetchAppointments() // Refresh list
         } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 401) return // redirecting
             if (err instanceof Error) {
                 console.error("Action failed:", err.message)
             } else {

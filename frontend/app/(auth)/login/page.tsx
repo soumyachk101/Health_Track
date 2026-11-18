@@ -4,25 +4,76 @@ import { useState, useEffect, Suspense, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, User, Mail, Lock, Eye, EyeOff, ArrowRight, Sparkles, ShieldCheck, Zap, Stethoscope, Building2, AlertCircle, RefreshCw } from "lucide-react"
+import { Loader2, User, Mail, Lock, Eye, EyeOff, ArrowRight, Sparkles, ShieldCheck, Zap, Stethoscope, Building2, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { cn, syncSessionFromSupabase } from "@/lib/utils"
-import {
-    supaSignIn,
-    supaGoogleSignIn,
-    supaResendVerification,
-    AuthError,
-    SupabaseNotConfiguredError,
-    roleOfSupaUser,
-    type SupaSessionInfo,
-} from "@/lib/supabase"
-import { apiProfile } from "@/lib/api"
-import { roleHomePath } from "@/components/Providers"
+import { cn } from "@/lib/utils"
+import { ApiError, apiLogin, apiGoogleLogin, type AuthUser } from "@/lib/api"
+import { roleHomePath } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 
-// The four-color Google "G" glyph for the native sign-in button (we no longer
-// use @react-oauth/google; Google auth goes through Supabase OAuth).
+// Obtain a Google credential. When a Google client id is configured we load
+// Google Identity Services and open its one-tap/inline picker; otherwise the
+// button reports that Google sign-in is unconfigured (no crash). Returns null
+// when the user cancels or the SDK is unavailable.
+async function requestGoogleCredential(): Promise<string | null> {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+    if (!clientId) return null
+    if (typeof window === "undefined") return null
+
+    // Dynamically load GIS once (global guard avoids duplicate script tags).
+    const w = window as unknown as {
+        google?: { accounts?: { id?: {
+            initialize: (cfg: Record<string, unknown>) => void
+            renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void
+        } } };
+    }
+    if (!w.google?.accounts?.id) {
+        await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script")
+            script.src = "https://accounts.google.com/gsi/client"
+            script.async = true
+            script.onload = () => resolve()
+            script.onerror = () => reject(new Error("gis-unavailable"))
+            document.head.appendChild(script)
+        })
+    }
+
+    const gis = w.google!.accounts!.id!
+    const buttonContainer = document.createElement("div")
+    buttonContainer.style.display = "none"
+    document.body.appendChild(buttonContainer)
+    gis.initialize({ client_id: clientId })
+
+    return new Promise<string | null>((resolve) => {
+        let settled = false
+        const finish = (c: string | null) => {
+            if (settled) return
+            settled = true
+            buttonContainer.remove()
+            resolve(c)
+        }
+        gis.renderButton(buttonContainer, {
+            type: "standard",
+            text: "continue_with",
+            size: "large",
+            shape: "pill",
+            locale: "en",
+            // GIS auto-submits and calls the callback when the credential is
+            // produced, then the button is dismissed automatically.
+            callback: (res: { credential?: string }) => {
+                const credential = res?.credential
+                // Hide the auto-rendered button so it doesn't linger.
+                buttonContainer.style.display = "none"
+                finish(credential || null)
+            },
+        })
+    })
+}
+
+// The four-color Google "G" glyph for the native sign-in button. Google auth
+// now exchanges the credential server-side (POST /api/v1/auth/google); the
+// credential is obtained client-side via Google Identity Services.
 function GoogleGlyph() {
     return (
         <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -41,13 +92,9 @@ function LoginForm() {
     const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({})
-    const [needsVerification, setNeedsVerification] = useState(false)
-    const [unverifiedEmail, setUnverifiedEmail] = useState("")
-    const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'success'>('idle')
-    const googlePending = useRef(false)
     const usernameRef = useRef<HTMLInputElement>(null)
     const passwordRef = useRef<HTMLInputElement>(null)
-    
+
     const [formData, setFormData] = useState({
         username: "",
         password: "",
@@ -60,25 +107,6 @@ function LoginForm() {
             setFormData(prev => ({ ...prev, role: roleParam }));
         }
     }, [searchParams])
-
-    const applyAuth = async (info: SupaSessionInfo) => {
-        // Resolve the app role: Supabase user_metadata first, then the Go
-        // profile (best-effort), defaulting to 'patient'.
-        let role = roleOfSupaUser(info.user) ?? ""
-        if (!role) {
-            try {
-                // Temporarily publish the token so apiProfile's Bearer header
-                // is set, then read the profile's role.
-                syncSessionFromSupabase(info.accessToken, null)
-                const p = await apiProfile()
-                role = (p?.user?.role as string) ?? "patient"
-            } catch {
-                role = "patient"
-            }
-        }
-        syncSessionFromSupabase(info.accessToken, role)
-        router.push(roleHomePath(role))
-    }
 
     const errorBannerRef = useRef<HTMLDivElement>(null)
 
@@ -101,36 +129,24 @@ function LoginForm() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
-        setNeedsVerification(false)
 
         if (!validate()) return
-
-        // Supabase Auth signs in by email; a plain username (no '@') can't be
-        // used with the email-provider.
-        const identifier = formData.username.trim()
-        if (!identifier.includes("@")) {
-            setError("Please sign in with your email address.")
-            errorBannerRef.current?.focus()
-            return
-        }
 
         setIsLoading(true)
 
         try {
-            const info = await supaSignIn(identifier, formData.password)
-            await applyAuth(info)
+            // The Pure Go auth endpoint sets the HttpOnly cookies; no local
+            // token is stored. The session's user (with role) routes home.
+            const result = await apiLogin(formData.username.trim(), formData.password)
+            const user: AuthUser | undefined = result.user
+            const role = user?.role || "patient"
+            router.push(roleHomePath(role))
         } catch (err: unknown) {
             let nextError: string
-            if (err instanceof AuthError && (err.code === "email_not_confirmed" || /not confirmed/i.test(err.message))) {
-                setNeedsVerification(true)
-                setUnverifiedEmail(identifier)
-                nextError = "Your email address requires verification. Check your inbox for the confirmation link."
-            } else if (err instanceof AuthError) {
-                nextError = /invalid/i.test(err.message)
-                    ? "Incorrect email or password. Please try again."
+            if (err instanceof ApiError) {
+                nextError = /invalid credentials/i.test(err.message)
+                    ? "Incorrect username or password. Please try again."
                     : err.message
-            } else if (err instanceof SupabaseNotConfiguredError) {
-                nextError = "Sign-in is unavailable right now (auth not configured). Please try again shortly."
             } else {
                 nextError = "Connection failed. Please check your internet."
             }
@@ -139,20 +155,6 @@ function LoginForm() {
             errorBannerRef.current?.focus()
         } finally {
             setIsLoading(false)
-        }
-    }
-
-    const handleResendVerification = async () => {
-        setResendStatus('loading')
-        try {
-            await supaResendVerification(unverifiedEmail)
-            setResendStatus('success')
-            setTimeout(() => setResendStatus('idle'), 5000)
-        } catch (err: unknown) {
-            setError(err instanceof SupabaseNotConfiguredError
-                ? "Verification resend is unavailable right now. Please try again shortly."
-                : "Could not send the verification email. Please try again.")
-            setResendStatus('idle')
         }
     }
 
@@ -322,26 +324,10 @@ function LoginForm() {
                                 tabIndex={-1}
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                className={cn(
-                                    "p-5 rounded-3xl flex items-start gap-4 outline-none",
-                                    needsVerification ? "bg-amber-50 text-amber-700 border border-amber-100" : "bg-red-50 text-red-600 border border-red-100"
-                                )}
+                                className="p-5 rounded-3xl bg-red-50 text-red-600 border border-red-100 flex items-start gap-4 outline-none"
                             >
                                 <AlertCircle className="h-6 w-6 mt-0.5 shrink-0" />
-                                <div className="space-y-3">
-                                    <p className="text-base font-bold leading-tight">{error}</p>
-                                    {needsVerification && (
-                                        <button
-                                            type="button"
-                                            onClick={handleResendVerification}
-                                            disabled={resendStatus === 'loading' || isLoading}
-                                            className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] py-2 px-4 rounded-full bg-white shadow-sm hover:shadow-md transition-all active:scale-95"
-                                        >
-                                            {resendStatus === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                                            {resendStatus === 'success' ? "Link Sent!" : "Resend Link"}
-                                        </button>
-                                    )}
-                                </div>
+                                <p className="text-base font-bold leading-tight">{error}</p>
                             </motion.div>
                         )}
 
@@ -455,26 +441,29 @@ function LoginForm() {
                             <button
                                 type="button"
                                 onClick={async () => {
-                                    if (googlePending.current) return
-                                    googlePending.current = true
                                     setError(null)
                                     setIsLoading(true)
                                     try {
-                                        const { url } = await supaGoogleSignIn()
-                                        if (url) window.location.assign(url)
+                                        // Obtain a Google credential via Google Identity
+                                        // Services (only when a client id is configured) and
+                                        // exchange it server-side per the auth contract.
+                                        const credential = await requestGoogleCredential()
+                                        if (!credential) {
+                                            setError("Google sign-in is not configured. Please use email instead.")
+                                            return
+                                        }
+                                        const result = await apiGoogleLogin(credential)
+                                        const user: AuthUser | undefined = result.user
+                                        router.push(roleHomePath(user?.role || "patient"))
                                     } catch (err: unknown) {
                                         setError(
-                                            err instanceof SupabaseNotConfiguredError
-                                                ? "Google sign-in is unavailable right now (auth not configured)."
-                                                : "Google sign-in is not available for this account. Please use email instead."
+                                            err instanceof Error && err.message
+                                                ? "Google sign-in is not available. Please use email instead."
+                                                : "Google sign-in is not available. Please use email instead."
                                         )
                                         errorBannerRef.current?.focus()
                                     } finally {
-                                        // Only clear if we did not navigate away.
-                                        if (document.visibilityState === "visible") {
-                                            googlePending.current = false
-                                            setIsLoading(false)
-                                        }
+                                        setIsLoading(false)
                                     }
                                 }}
                                 disabled={isLoading}

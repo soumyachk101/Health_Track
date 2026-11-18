@@ -1,45 +1,54 @@
 package cache
 
-// RotateScript atomically rotates one refresh token of a family in Redis.
+// RotateScript atomically rotates one opaque refresh token of a family
+// (ADR-0001). The caller resolves family first with `GET rt_fam:<h0>` and
+// passes every key it may write, so replication is key-correct.
 //
-//	KEYS[1] = "rt:<sha256-of-presented-token>"
-//	KEYS[2] = "rt_family:<family_id>"
-//	ARGV[1] = sha256 of the successor token
-//	ARGV[2] = TTL for the new entry, in seconds
+// Keys the script touches:
 //
-// Semantics:
-//   - old token present  -> replace it (del + set new), extend the family,
-//     return "ok".
-//   - old token ABSENT   -> it was already consumed: this is a replay. Kill
-//     the whole family (del + flag), return "reused".
+//	`rt:<h>`             live marker for the CURRENT token hash of a family
+//	`rt_fam:<h>`         hash -> family map (survives a rotation so a replayed
+//	                      already-consumed token can still be attributed)
+//	`rt_family:<f>`      family record: "uid|hcur"
+//	`rt_family:<f>:rev` death flag for the whole family
 //
-// A replayed refresh token therefore revokes every still-live token of its
-// family in the same atomic step.
+// KEYS[1] = "rt:<h0>"             the presented token's live marker
+// KEYS[2] = "rt_fam:<h0>"        the presented token's family map
+// KEYS[3] = "rt_family:<f>"     the family record
+// KEYS[4] = "rt_family:<f>:rev" the family death flag
+// KEYS[5] = "rt:<h1>"           the successor's live marker
+// KEYS[6] = "rt_fam:<h1>"       the successor's family map
+// ARGV[1] = TTL in seconds
+// ARGV[2] = h1, the successor token's hash
+//
+// Returns:
+//   - "ok"              h0 was current: rotated, successor registered.
+//   - "reused:<uid>"    h0 was already consumed (or another hash is
+//     current): replay detected, the whole family is revoked atomically.
+//   - "dead"            the family record or flag is already gone (killed by
+//     an earlier replay, a logout, or TTL expiry): a plain session error.
 const RotateScript = `
-local present = redis.call("GET", KEYS[1])
-if not present then
-  redis.call("DEL", KEYS[2])
-  redis.call("SET", KEYS[2] .. ":reused", "1", "EX", ARGV[2])
-  return "reused"
+if redis.call("EXISTS", KEYS[4]) == 1 then
+  return "dead"
 end
-redis.call("DEL", KEYS[1])
-redis.call("SET", "rt:" .. ARGV[1], KEYS[2], "EX", ARGV[2])
-redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2]))
-return "ok"
-`
-
-// ClaimOtpScript claims one hashed OTP/reset token exactly once.
-//
-//	KEYS[1] = "otp:<sha256-of-token>:<purpose>"
-//	ARGV[1] = TTL, in seconds
-//
-// Returns "claimed" when the key was free and is now held, "taken" when a
-// concurrent consumer already won. The claim doubles as the expiry marker:
-// the key disappears after ARGV[1] seconds, so a late replay is a no-op.
-const ClaimOtpScript = `
-if redis.call("EXISTS", KEYS[1]) == 1 then
-  return "taken"
+local rec = redis.call("GET", KEYS[3])
+if not rec then
+  redis.call("SET", KEYS[4], "1", "EX", ARGV[1])
+  return "dead"
 end
-redis.call("SET", KEYS[1], "1", "EX", tonumber(ARGV[1]))
-return "claimed"
+local sep = string.find(rec, "|", 1, true)
+local uid = string.sub(rec, 1, sep - 1)
+local hcur = string.sub(rec, sep + 1)
+local h0 = string.sub(KEYS[1], 4)
+if hcur == h0 then
+  redis.call("SET", KEYS[5], string.sub(KEYS[2], 7), "EX", ARGV[1])
+  redis.call("SET", KEYS[6], string.sub(KEYS[2], 7), "EX", ARGV[1])
+  redis.call("DEL", KEYS[1])
+  redis.call("SET", KEYS[3], uid .. "|" .. ARGV[2], "EX", ARGV[1])
+  return "ok"
+end
+redis.call("SET", KEYS[4], "1", "EX", ARGV[1])
+redis.call("DEL", KEYS[3])
+redis.call("DEL", KEYS[2])
+return "reused:" .. uid
 `

@@ -1,3 +1,7 @@
+// Package database exposes the shared Postgres pool and the versioned
+// migration runner. The runner is the ONLY place schema changes happen:
+// the API boot is read-only unless the DB_MIGRATE_ON_BOOT flag says otherwise
+// (see main.go), so a fresh deployment can never silently run ad-hoc DDL.
 package database
 
 import (
@@ -7,29 +11,36 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-// schemaVersions records which migration files each environment has applied.
-// It is created here (rather than in a migration) because the runner needs
-// it to exist before it can record anything.
+// schemaVersionsDDL records which migration files each environment has
+// applied. It is created here (rather than in a migration) because the
+// runner needs it to exist before it can record anything.
 const schemaVersionsDDL = `CREATE TABLE IF NOT EXISTS schema_migrations (
   version TEXT PRIMARY KEY,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`
 
-// Migrate applies every pending migration in backend/migrations, in version
-// order, and records each in schema_migrations. Each file runs inside one
-// transaction; a failure aborts that file and stops the run.
+// Migrate applies every pending embedded migration, in version order, and
+// records each in schema_migrations. Each file runs inside one transaction;
+// a failure aborts that file and stops the run.
 //
 // A database that was bootstrapped by the legacy DDL-on-startup has no
 // schema_migrations rows, so on a first run 0001 (the idempotent baseline
-// copy of that DDL) and 0002 are both applied. The baseline is idempotent,
-// so re-running it against an already-populated database is a no-op.
-func Migrate(ctx context.Context, pool *pgx.Pool) error {
+// copy of that DDL) and every later file are both applied. The baseline is
+// idempotent, so re-running it against an already-populated database is a
+// no-op.
+func Migrate(ctx context.Context, db *DB) error {
+	return MigratePool(ctx, db.pool)
+}
+
+// MigratePool is Migrate over a raw pool (used by cmd/migrate, which owns
+// its own connection lifecycle).
+func MigratePool(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, schemaVersionsDDL); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
@@ -76,7 +87,7 @@ func versionOf(name string) string {
 	return base
 }
 
-func applyMigration(ctx context.Context, pool *pgx.Pool, version string, sql []byte) error {
+func applyMigration(ctx context.Context, pool *pgxpool.Pool, version string, sql []byte) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -94,7 +105,7 @@ func applyMigration(ctx context.Context, pool *pgx.Pool, version string, sql []b
 	return tx.Commit(ctx)
 }
 
-func appliedVersions(ctx context.Context, pool *pgx.Pool) (map[string]bool, error) {
+func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
 	// The table was just created, so the query always succeeds.
 	rows, err := pool.Query(ctx, "SELECT version FROM schema_migrations")
 	if err != nil {

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { ErrorBanner, FieldError } from "@/components/ui/page-states"
 import { Loader2, Activity, CheckCircle } from "lucide-react"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 type FieldErrors = Record<string, string>
 
@@ -75,12 +75,6 @@ export default function AddHealthRecord() {
         e.preventDefault()
         if (isLoading || success) return // prevent duplicate submits
 
-        const token = localStorage.getItem('token')
-        if (!token) {
-            router.push('/login')
-            return
-        }
-
         const formData = new FormData(e.currentTarget)
         const raw = Object.fromEntries(formData.entries())
         const values: Record<string, string> = {}
@@ -115,29 +109,13 @@ export default function AddHealthRecord() {
         }
 
         try {
-            const response = await fetch(getApiUrl("/api/health-track/add"), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(body)
-            })
-
-            if (response.status === 401 || response.status === 403) {
-                localStorage.removeItem('token')
-                router.push('/login')
-                return
-            }
-
-            if (response.ok) {
-                setSuccess(true)
-                // Show the real success state briefly, then navigate away.
-                setTimeout(() => router.push('/health-track'), 800)
-            } else {
-                setFormError("Failed to save your record. Please try again.")
-            }
+            // Cookie auth + silent 401->refresh->retry handled centrally.
+            await apiFetch("/api/health-track/add", { method: "POST", body })
+            setSuccess(true)
+            // Show the real success state briefly, then navigate away.
+            setTimeout(() => router.push('/health-track'), 800)
         } catch (error: unknown) {
+            if (error instanceof ApiError && error.status === 401) return // redirecting
             if (error instanceof Error) {
                 console.error("Error adding record:", error.message)
             } else {

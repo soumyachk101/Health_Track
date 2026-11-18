@@ -351,7 +351,10 @@ func coreAddHealthRecord(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			OxygenLevel            *int32   `json:"oxygen_level"`
 			Notes                  *string  `json:"notes"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 		notes := ""
 		if b.Notes != nil {
 			notes = *b.Notes
@@ -387,7 +390,10 @@ func coreAddMedicine(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			PrescribedBy string  `json:"prescribed_by"`
 			Notes        string  `json:"notes"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 		// Advisory bounds on user input; schema columns are TEXT so these
 		// guard against oversized payloads, not DB constraints.
 		tooLong := func(name, val string, capN int) bool {
@@ -437,7 +443,10 @@ func coreAddPrescription(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			FollowUpDate     *string `json:"follow_up_date"`
 			Notes            string  `json:"notes"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		tooLong := func(name, val string, capN int) bool {
 			if len(val) > capN {
@@ -799,7 +808,10 @@ func coreBookAppointment(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			Reason   *string `json:"reason"`
 			Type     *string `json:"type"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		apptType := ""
 		if b.Type != nil {
@@ -844,7 +856,10 @@ func coreAppointmentAction(db *database.DB, cfg *config.Config) gin.HandlerFunc 
 		var b struct {
 			Action string `json:"action"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		appt, err := db.QueryOne(ctx, "SELECT * FROM appointments WHERE id = $1", c.Param("appointment_id"))
 		if err != nil {
@@ -935,7 +950,10 @@ func coreServiceRequest(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			Price       *float32 `json:"price"`
 			Address     *string  `json:"address"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 		if (b.ServiceName != nil && len(*b.ServiceName) > 256) || (b.Address != nil && len(*b.Address) > 2048) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Input too long"})
 			return
@@ -976,7 +994,10 @@ func coreServiceRequestAction(db *database.DB, cfg *config.Config) gin.HandlerFu
 		var b struct {
 			Action string `json:"action"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		reqRow, err := db.QueryOne(ctx, "SELECT * FROM service_requests WHERE id = $1", c.Param("request_id"))
 		if err != nil {

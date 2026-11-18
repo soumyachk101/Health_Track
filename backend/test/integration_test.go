@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,9 +49,19 @@ func TestMain(m *testing.M) {
 		dsn = os.Getenv("DATABASE_URL")
 	}
 	if dsn != "" {
-		db, err := database.Connect(context.Background(), dsn)
+		ctx := context.Background()
+		db, err := database.Connect(ctx, dsn)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "integration: connect to DSN failed: %v\n", err)
+			os.Exit(1)
+		}
+		// Boot the schema with the same versioned runner the out-of-band
+		// `go run ./cmd/migrate` uses. This is the test harness's place for
+		// the boot-time bootstrap that the production API now refuses to run
+		// implicitly (finding P2.3) unless DB_MIGRATE_ON_BOOT is set.
+		if err := database.Migrate(ctx, db); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: migrate failed: %v\n", err)
+			db.Close()
 			os.Exit(1)
 		}
 		testDB = db
@@ -77,6 +88,10 @@ func newServer(db *database.DB, t *testing.T) *srv {
 		EmailHost:      "",
 		EmailPort:      587,
 		Port:           "",
+		// Mount the Pure Go auth module (ADR-0001) so the /api/v1/auth
+		// cookie routes are live for the auth-v1 regression tests. The
+		// degrade-safe cache (REDIS_URL unset) backs it in-memory.
+		AuthCookieEnabled: true,
 	}
 	engine := hands.BuildRouter(db, cfg, email.New(cfg))
 	return &srv{httptest.NewServer(engine)}
@@ -473,10 +488,10 @@ func TestProtectedCoreState(t *testing.T) {
 	}
 
 	for path, keys := range map[string][]string{
-		"/api/past-records":   {"health_records", "prescriptions"},
-		"/api/mental-health":  {"avg_mood", "logs"},
-		"/api/lifestyle":      {"logs"},
-		"/api/insurance":      {"policies", "active_policies"},
+		"/api/past-records":  {"health_records", "prescriptions"},
+		"/api/mental-health": {"avg_mood", "logs"},
+		"/api/lifestyle":     {"logs"},
+		"/api/insurance":     {"policies", "active_policies"},
 	} {
 		code, body = s.getJSON(t, path, token)
 		if code != http.StatusOK {
@@ -705,35 +720,106 @@ func TestOTPFlow(t *testing.T) {
 	}
 }
 
+// TestChatbotConfigErrors pins the S3 gate: the chatbot + TTS routes are
+// behind the Pure Go auth module's AuthRequired, so an anonymous request
+// gets a 401 and can no longer reach the provider regardless of provider
+// configuration. The authenticated path (needs a DSN) still surfaces the
+// no-provider-key 503 and the empty-input 400s.
 func TestChatbotConfigErrors(t *testing.T) {
 	s := newServer(testDB, t)
 	defer s.Close()
 
+	// Anonymous: the cookie gate answers 401 before any provider call.
 	code, body := s.postJSON(t, "/chatbot/api", "", map[string]any{"message": "hi"})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("chatbot anonymous: got %d %v, want 401", code, body)
+	}
+	code, body = s.postJSON(t, "/chatbot/api/tts", "", map[string]any{"text": "hi"})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("tts anonymous: got %d %v, want 401", code, body)
+	}
+
+	if testDB == nil {
+		t.Skip("authenticated chatbot assertions need a DSN")
+	}
+
+	// Authenticated session: register + mark verified + module login
+	// (issues the ht_access/ht_refresh cookies).
+	username := "it_chatbot_" + fmt.Sprint(stamp)
+	emailAddr := username + "@x.test"
+	registerPatient(s, t, username, emailAddr)
+
+	var cookies []string
+	cookieReq, _ := http.NewRequest(http.MethodPost, s.URL+"/api/v1/auth/login",
+		bytes.NewReader([]byte(`{"username":"`+username+`","password":"Passw0rd!"}`)))
+	cookieReq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(cookieReq)
+	if err != nil {
+		t.Fatalf("module login: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("module login: got %d", resp.StatusCode)
+	}
+	for _, sc := range resp.Header.Values("Set-Cookie") {
+		cookies = append(cookies, firstCookieNameValue(sc))
+	}
+
+	postWithCookies := func(path string, body map[string]any) (int, map[string]any) {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		req, _ := http.NewRequest(http.MethodPost, s.URL+path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		for _, ck := range cookies {
+			req.Header.Add("Cookie", ck)
+		}
+		r2, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		defer r2.Body.Close()
+		var out map[string]any
+		if err := json.NewDecoder(r2.Body).Decode(&out); err != nil {
+			t.Fatalf("%s: non-JSON %d: %v", path, r2.StatusCode, err)
+		}
+		return r2.StatusCode, out
+	}
+
+	// No provider keys configured: the provider step 503s (S3 quota passes
+	// on a fresh in-memory cache).
+	code, body = postWithCookies("/chatbot/api", map[string]any{"message": "hi"})
 	if code != http.StatusServiceUnavailable {
-		t.Fatalf("chatbot no keys: got %d %v", code, body)
+		t.Fatalf("chatbot no keys: got %d %v, want 503", code, body)
 	}
 	if body["error"] != "Server configuration error: API key missing" {
 		t.Fatalf("chatbot no keys error = %v", body["error"])
 	}
 
-	code, body = s.postJSON(t, "/chatbot/api", "", map[string]any{})
+	code, body = postWithCookies("/chatbot/api", map[string]any{})
 	if code != http.StatusBadRequest || body["error"] != "No message provided" {
 		t.Fatalf("chatbot empty message: got %d %v", code, body)
 	}
 
-	code, body = s.postJSON(t, "/chatbot/api/tts", "", map[string]any{"text": "hi"})
+	code, body = postWithCookies("/chatbot/api/tts", map[string]any{"text": "hi"})
 	if code != http.StatusServiceUnavailable {
-		t.Fatalf("tts no key: got %d %v", code, body)
+		t.Fatalf("tts no key: got %d %v, want 503", code, body)
 	}
 	if body["error"] != "TTS configuration error: API key missing" {
 		t.Fatalf("tts no key error = %v", body["error"])
 	}
 
-	code, body = s.postJSON(t, "/chatbot/api/tts", "", map[string]any{"text": ""})
+	code, body = postWithCookies("/chatbot/api/tts", map[string]any{"text": ""})
 	if code != http.StatusBadRequest || body["error"] != "No text provided" {
 		t.Fatalf("tts empty text: got %d %v", code, body)
 	}
+}
+
+// firstCookieNameValue extracts "Name=Value" from a Set-Cookie header value.
+func firstCookieNameValue(setCookie string) string {
+	if i := strings.IndexByte(setCookie, ';'); i >= 0 {
+		return strings.TrimSpace(setCookie[:i])
+	}
+	return strings.TrimSpace(setCookie)
 }
 
 func TestGoogleLoginShape(t *testing.T) {

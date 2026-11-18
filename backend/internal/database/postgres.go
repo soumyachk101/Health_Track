@@ -62,6 +62,11 @@ func (db *DB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Command
 	return db.pool.Exec(ctx, sql, args...)
 }
 
+// Begin starts a transaction; commit/rollback are owned by the caller.
+func (db *DB) Begin(ctx context.Context) (pgx.Tx, error) {
+	return db.pool.Begin(ctx)
+}
+
 // Run runs a statement. INSERTs get " RETURNING id" appended (unless one is
 // already present) and return the new id; other statements return the row count.
 func (db *DB) Run(ctx context.Context, sql string, args ...any) (int64, error) {

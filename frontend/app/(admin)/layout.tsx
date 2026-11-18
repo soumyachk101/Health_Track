@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RouteGuard } from "@/components/guards/RouteGuard";
 
 // Admin console: privileged area, excluded from search engines.
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function AdminLayoutMeta({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <RouteGuard requiredRole="admin">
+      {children}
+    </RouteGuard>
+  );
 }

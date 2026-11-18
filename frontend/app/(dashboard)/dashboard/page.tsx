@@ -5,9 +5,8 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageError, PageEmpty, PageSkeleton } from "@/components/ui/page-states"
 import { Heart, Droplet, Weight, Activity, Pill, Moon, Plus, FileText, Brain, Footprints } from "lucide-react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 // Define interfaces for data passed from API
 interface DashboardData {
@@ -46,7 +45,6 @@ export default function Dashboard() {
     const [error, setError] = useState<string | null>(null)
     // Bumping this key re-runs the fetch (Retry action).
     const [reloadKey, setReloadKey] = useState(0)
-    const router = useRouter()
 
     const refetch = useCallback(() => {
         setError(null)
@@ -59,40 +57,18 @@ export default function Dashboard() {
         const fetchData = async () => {
             setLoading(true)
             setError(null)
-
-            const token = localStorage.getItem('token')
-            if (!token) {
-                // No session at all: skip the fetch and go to login.
-                router.push('/login')
-                return
-            }
-
             try {
-                const response = await fetch(getApiUrl("/api/dashboard/"), {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
+                // Cookie-authenticated + silent 401->refresh->retry. A dead
+                // session already redirects to /login inside apiFetch; a 403
+                // (wrong role) surfaces as an error state below.
+                const result = await apiFetch<DashboardData>("/api/dashboard/", {
+                    signal: controller.signal,
                 })
-
-                // A 401/403 means the session is dead or wrong role — redirect
-                // after the fetch attempt, not before.
-                if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem('token')
-                    router.push('/login')
-                    return
-                }
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch dashboard data')
-                }
-
-                const result = await response.json()
                 setData(result)
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     if (err.name === 'AbortError') return
+                    if (err instanceof ApiError && err.status === 401) return // redirecting away
                     console.error("Dashboard Fetch Error:", err)
                     setError(err.message || "Failed to load dashboard")
                 } else {
@@ -108,7 +84,7 @@ export default function Dashboard() {
 
         fetchData()
         return () => controller.abort()
-    }, [router, reloadKey])
+    }, [reloadKey])
 
     if (loading) {
         return (

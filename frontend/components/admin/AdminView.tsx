@@ -7,10 +7,8 @@ import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
 import { Input } from "@/components/ui/input"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
-import { getStoredToken } from "@/lib/utils"
-import { useAuth, roleHomePath } from "@/components/Providers"
+import { apiFetch, ApiError } from "@/lib/api"
+import { useAuth } from "@/components/Providers"
 
 interface AdminStats {
     total_users: number
@@ -39,7 +37,6 @@ const adminNavItems = [
 
 export function AdminView() {
     const pathname = usePathname()
-    const router = useRouter()
     const activePath = pathname
     const [stats, setStats] = useState<AdminStats | null>(null)
     const [users, setUsers] = useState<AdminUser[]>([])
@@ -47,90 +44,55 @@ export function AdminView() {
     const [loadError, setLoadError] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterType, setFilterType] = useState('')
-    const { token, role, ready, logout } = useAuth()
+    const { role, ready } = useAuth()
 
-    // Role gate: only admin/superuser sessions may reach the admin panel.
-    // Until hydration finishes we render nothing rather than redirecting a
-    // valid admin session; a non-admin is sent to their role's home page.
-    useEffect(() => {
-        if (!ready) return
-        if (role !== 'admin' || !token) {
-            router.replace(roleHomePath(role ?? null))
-        }
-    }, [ready, role, token, router])
+    // The (admin) layout's RouteGuard enforces admin-only access before this
+    // renders; a double-check here keeps the panel safe if ever used elsewhere.
 
     const fetchData = useCallback(async () => {
         setIsLoading(true)
         setLoadError(null)
-        const tok = getStoredToken()
-        if (!tok) {
-            logout()
-            return
-        }
         try {
+            // Cookie auth + silent 401->refresh->retry handled centrally.
             // Fetch Stats
-            const statsRes = await fetch(getApiUrl("/admin-panel/api/stats"), {
-                headers: { 'Authorization': `Bearer ${tok}` }
-            })
-
-            if (statsRes.status === 401 || statsRes.status === 403) {
-                logout()
-                return
-            }
-
-            if (!statsRes.ok) {
-                throw new Error(`Failed to load admin panel (status ${statsRes.status})`)
-            }
-
-            const statsData = await statsRes.json()
-            if (statsData.success) setStats(statsData.stats)
+            const statsData = await apiFetch<{ success?: boolean; stats?: AdminStats }>(
+                "/admin-panel/api/stats"
+            )
+            if (statsData.stats) setStats(statsData.stats)
 
             // Fetch Users
-            const usersRes = await fetch(getApiUrl("/admin-panel/api/users"), {
-                headers: { 'Authorization': `Bearer ${tok}` }
-            })
-            if (!usersRes.ok) {
-                throw new Error(`Failed to load users (status ${usersRes.status})`)
-            }
-            const usersData = await usersRes.json()
-            if (usersData.success) setUsers(usersData.users)
-
+            const usersData = await apiFetch<{ success?: boolean; users?: AdminUser[] }>(
+                "/admin-panel/api/users"
+            )
+            setUsers(usersData.users ?? [])
         } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 401) return // redirecting
             console.error("Failed to fetch admin data", err)
             setLoadError(err instanceof Error ? err.message : "Failed to load admin data")
         } finally {
             setIsLoading(false)
         }
-    }, [logout])
+    }, [])
 
     useEffect(() => {
-        // Only fetch once we know this is a valid admin session; a non-admin
-        // has already been redirected by the role-gate effect above.
-        if (role === 'admin' && token) {
+        // The (admin) layout guard already ensures role === 'admin' + active
+        // status before children render; fetch once that's settled.
+        if (ready && role === 'admin') {
             fetchData()
         }
-    }, [fetchData, role, token])
+    }, [fetchData, ready, role])
 
     const handleUserAction = async (id: number, action: string) => {
-        const tok = getStoredToken()
         try {
-            const res = await fetch(getApiUrl(`/admin-panel/api/users/${id}/action`), {
+            await apiFetch(`/admin-panel/api/users/${id}/action`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${tok}`
-                },
-                body: JSON.stringify({ action })
+                body: { action },
             })
-            const data = await res.json()
-            if (data.success) {
-                fetchData() // Refresh
-            }
+            fetchData() // Refresh
         } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 401) return // redirecting
             console.error("Admin action failed", err)
-            if (err instanceof Error) {
-                // Potential feedback to user here if needed
-            }
+            setLoadError(err instanceof Error ? err.message : "Admin action failed")
         }
     }
 
@@ -147,9 +109,9 @@ export function AdminView() {
     })
 
     // While the auth session is still hydrating, or the caller is not an
-    // admin, render nothing. The role-gate useEffect above redirects a
-    // non-admin session to its role's home page.
-    if (!ready || role !== 'admin' || !token) {
+    // admin, render nothing. The (admin) layout guard already enforces the
+    // redirect for non-admin sessions.
+    if (!ready || role !== 'admin') {
         return null
     }
 

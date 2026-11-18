@@ -3,12 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Clock, MapPin, DollarSign, CheckCircle, TrendingUp, Package, Home, Settings, ArrowRight, AlertCircle, Inbox, Loader2 } from 'lucide-react'
 import Link from "next/link"
-import { cn, getStoredToken, clearSession } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 import { useAuth } from "@/components/Providers"
 
 const providerNavItems = [
@@ -35,7 +34,6 @@ export default function ProviderDashboard() {
     const [requests, setRequests] = useState<ServiceRequest[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
-    const router = useRouter()
     const { profile } = useAuth()
     // Monogram: initials of the provider's name when available, else "PRO".
     const providerName = `${profile?.user?.first_name ?? ""} ${profile?.user?.last_name ?? ""}`.trim()
@@ -52,30 +50,13 @@ export default function ProviderDashboard() {
 
     const fetchRequests = useCallback(async () => {
         setError(null)
-        const token = getStoredToken()
-        if (!token) {
-            router.push('/login')
-            return
-        }
         try {
-            const response = await fetch(getApiUrl("/api/service-requests"), {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-
-            if (response.status === 401 || response.status === 403) {
-                clearSession()
-                router.push('/login')
-                return
-            }
-
-            if (!response.ok) {
-                throw new Error('Failed to load service requests')
-            }
-
-            const data = await response.json()
-            if (data.success) {
+            // Cookie auth + silent 401->refresh->retry handled centrally; a
+            // dead session already redirects to /login inside apiFetch.
+            const data = await apiFetch<{ success?: boolean; requests?: ServiceRequest[] }>(
+                "/api/service-requests"
+            )
+            if (data.requests) {
                 setRequests(data.requests)
                 // Update stats
                 const pendingCount = data.requests.filter((r: ServiceRequest) => r.status === 'pending').length
@@ -92,17 +73,18 @@ export default function ProviderDashboard() {
                 }))
             }
         } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 401) return // redirecting
             if (err instanceof Error) {
                 console.error("Failed to fetch requests:", err.message)
-                setError("Couldn&apos;t load service requests. Check your connection and try again.")
+                setError("Couldn't load service requests. Check your connection and try again.")
             } else {
                 console.error("Failed to fetch requests:", err)
-                setError("Couldn&apos;t load service requests. Check your connection and try again.")
+                setError("Couldn't load service requests. Check your connection and try again.")
             }
         } finally {
             setIsLoading(false)
         }
-    }, [router])
+    }, [])
 
     useEffect(() => {
         fetchRequests()
@@ -110,21 +92,11 @@ export default function ProviderDashboard() {
 
     const handleAction = async (id: number, action: 'accept' | 'decline' | 'complete') => {
         try {
-            const token = getStoredToken()
-
-            const response = await fetch(getApiUrl(`/api/service-requests/${id}/action`), {
+            await apiFetch(`/api/service-requests/${id}/action`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ action })
+                body: { action },
             })
-
-            const data = await response.json()
-            if (data.success) {
-                fetchRequests() // Refresh list
-            }
+            fetchRequests() // Refresh list
         } catch (err: unknown) {
             if (err instanceof Error) {
                 console.error("Action failed:", err.message)

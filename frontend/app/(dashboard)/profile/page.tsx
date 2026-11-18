@@ -7,8 +7,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { User, Mail, Phone, MapPin, Heart, Save } from "lucide-react"
-import { useRouter } from "next/navigation"
-import { getApiUrl } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 
 interface ProfileData {
     csrf_token: string
@@ -34,8 +33,6 @@ export default function Profile() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [reloadKey, setReloadKey] = useState(0)
-    const router = useRouter()
-
     const refetch = useCallback(() => {
         setError(null)
         setData(null)
@@ -48,36 +45,15 @@ export default function Profile() {
             setLoading(true)
             setError(null)
 
-            const token = localStorage.getItem('token')
-            if (!token) {
-                router.push('/login')
-                return
-            }
-
             try {
-                const response = await fetch(getApiUrl("/api/profile/"), {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
+                const result = await apiFetch<ProfileData>("/api/profile/", {
+                    signal: controller.signal,
                 })
-
-                if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem('token')
-                    router.push('/login')
-                    return
-                }
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch profile data')
-                }
-
-                const result = await response.json()
                 setData(result)
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     if (err.name === 'AbortError') return
+                    if (err instanceof ApiError && err.status === 401) return
                     console.error("Profile Fetch Error:", err)
                     setError(err.message || "Failed to load profile")
                 } else {
@@ -93,7 +69,7 @@ export default function Profile() {
 
         fetchData()
         return () => controller.abort()
-    }, [router, reloadKey])
+    }, [reloadKey])
 
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault()

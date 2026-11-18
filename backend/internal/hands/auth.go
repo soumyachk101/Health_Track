@@ -27,6 +27,7 @@ import (
 	"healthtrack/internal/database"
 	"healthtrack/internal/middleware"
 	"healthtrack/internal/models"
+	"healthtrack/internal/platform/queue"
 	"healthtrack/internal/services/email"
 	"healthtrack/internal/services/otp"
 )
@@ -293,7 +294,10 @@ func authLogin(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			Username string `json:"username"`
 			Password string `json:"password"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		limiterKey := middleware.RateKey(c, b.Username)
 		if !middleware.RateCheck(c, limiterKey) {
@@ -334,7 +338,7 @@ func authLogin(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func authRegister(db *database.DB, cfg *config.Config, mail *email.Service) gin.HandlerFunc {
+func authRegister(db *database.DB, cfg *config.Config, mail *email.Service, prod *queue.Producer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		var b struct {
@@ -350,7 +354,10 @@ func authRegister(db *database.DB, cfg *config.Config, mail *email.Service) gin.
 			Specialization string `json:"specialization"`
 			State          string `json:"state"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		fail := func(msg string) { c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": msg}) }
 
@@ -432,7 +439,10 @@ func authRegister(db *database.DB, cfg *config.Config, mail *email.Service) gin.
 		}
 
 		verificationLink := baseURL + "/verify-email?otp=" + code + "&email=" + url.QueryEscape(normalizedEmail)
-		emailSent := mail.SendVerificationLinkEmail(ctx, normalizedEmail, verificationLink, b.FirstName)
+		// ADR-0002: enqueue email:send when the queue is configured, else the
+		// synchronous SMTP call (today's behavior) — never block auth on the queue.
+		emailSent := queue.DispatchMail(ctx, prod, queue.MailKindVerification, normalizedEmail, b.FirstName, verificationLink,
+			func(ctx context.Context) bool { return mail.SendVerificationLinkEmail(ctx, normalizedEmail, verificationLink, b.FirstName) })
 		if !emailSent {
 			c.JSON(http.StatusOK, gin.H{
 				"success":  true,
@@ -486,7 +496,10 @@ func authRegisterProfile(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			Specialization string `json:"specialization"`
 			City           string `json:"city"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		// Prefer the authenticated user's canonical email/identity; body fields
 		// fill in what the Supabase metadata didn't carry.
@@ -547,7 +560,7 @@ func authRegisterProfile(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 				`INSERT INTO users (username, email, password, first_name, last_name,
 				 user_type, is_approved, is_email_verified, city, auth_uuid)
 				 VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9)`,
-				username, email, "supabase:" + user.AuthUUID, firstName, lastName,
+				username, email, "supabase:"+user.AuthUUID, firstName, lastName,
 				userType, isApproved, b.City, user.AuthUUID); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": dbErrorMessage(err)})
 				return
@@ -610,7 +623,10 @@ func authVerifyOtp(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			OtpType  string `json:"otp_type"`
 			Username string `json:"username"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		limiterKey := middleware.RateKey(c, b.Email, b.Username)
 		if !middleware.RateCheck(c, limiterKey) {
@@ -689,7 +705,7 @@ func authVerifyOtp(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func authResendOtp(db *database.DB, cfg *config.Config, mail *email.Service) gin.HandlerFunc {
+func authResendOtp(db *database.DB, cfg *config.Config, mail *email.Service, prod *queue.Producer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		var b struct {
@@ -697,7 +713,10 @@ func authResendOtp(db *database.DB, cfg *config.Config, mail *email.Service) gin
 			Email     string `json:"email"`
 			FirstName string `json:"first_name"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		fail := func(msg string) { c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": msg}) }
 
@@ -725,19 +744,23 @@ func authResendOtp(db *database.DB, cfg *config.Config, mail *email.Service) gin
 			fail(dbErrorMessage(err))
 			return
 		}
-		_ = mail.SendOtpEmail(ctx, b.Email, code, b.FirstName)
+		_ = queue.DispatchMail(ctx, prod, queue.MailKindOtp, b.Email, b.FirstName, code,
+			func(ctx context.Context) bool { return mail.SendOtpEmail(ctx, b.Email, code, b.FirstName) })
 
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "A new verification code has been sent to your email"})
 	}
 }
 
-func authForgotPassword(db *database.DB, cfg *config.Config, mail *email.Service) gin.HandlerFunc {
+func authForgotPassword(db *database.DB, cfg *config.Config, mail *email.Service, prod *queue.Producer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		var b struct {
 			Email string `json:"email"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		if b.Email == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Email is required"})
@@ -781,7 +804,9 @@ func authForgotPassword(db *database.DB, cfg *config.Config, mail *email.Service
 		}
 
 		resetLink := baseURL + "/reset-password?otp=" + code + "&email=" + url.QueryEscape(normalizedEmail)
-		if !mail.SendResetEmail(ctx, normalizedEmail, resetLink, u.FirstName) {
+		resetSent := queue.DispatchMail(ctx, prod, queue.MailKindReset, normalizedEmail, u.FirstName, resetLink,
+			func(ctx context.Context) bool { return mail.SendResetEmail(ctx, normalizedEmail, resetLink, u.FirstName) })
+		if !resetSent {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to send reset email. Please check server configuration."})
 			return
 		}
@@ -797,7 +822,10 @@ func authResetPassword(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			Otp         string `json:"otp"`
 			NewPassword string `json:"new_password"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		fail := func(msg string) { c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": msg}) }
 
@@ -866,7 +894,10 @@ func authGoogleLogin(db *database.DB, cfg *config.Config) gin.HandlerFunc {
 			Credential string `json:"credential"`
 			Role       string `json:"role"`
 		}
-		_ = c.ShouldBindJSON(&b)
+		if err := c.ShouldBindJSON(&b); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request body"})
+			return
+		}
 
 		failed := func() {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Google authentication failed"})

@@ -52,6 +52,15 @@ type Config struct {
 	// /api/v1/auth cookie routes are not mounted and legacy paths serve
 	// everything (rollout step 1 of the ADR; rollback = set this to false).
 	AuthCookieEnabled bool
+
+	// --- Schema bootstrap (finding P2.3) ---
+	// DB_MIGRATE_ON_BOOT. When false (the default), database.Connect is
+	// read-only: the versioned migrations are applied out-of-band by
+	// `go run ./cmd/migrate` before the server starts, so a fresh instance can
+	// never silently mutate production DDL. When true (the integration test
+	// harness, and any deployment that wants boot-time bootstrap), Connect
+	// runs database.Migrate right after connecting.
+	MigrateOnBoot bool
 }
 
 func Load() *Config {
@@ -102,6 +111,11 @@ func Load() *Config {
 	cfg.AuthCookieDomain = strings.TrimSpace(os.Getenv("AUTH_COOKIE_DOMAIN"))
 	cfg.AuthInsecureCookies = strings.EqualFold(os.Getenv("AUTH_INSECURE_COOKIES"), "true")
 	cfg.AuthCookieEnabled = envBool("AUTH_COOKIE_ENABLED", true)
+
+	// Schema bootstrap (finding P2.3): default read-only boot. The versioned
+	// runner is out-of-band (`go run ./cmd/migrate`); set DB_MIGRATE_ON_BOOT
+	// only where boot-time bootstrap is wanted (integration test harness).
+	cfg.MigrateOnBoot = envBool("DB_MIGRATE_ON_BOOT", false)
 
 	if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); strings.TrimSpace(origins) != "" {
 		var parts []string

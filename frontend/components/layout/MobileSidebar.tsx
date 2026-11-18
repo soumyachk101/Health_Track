@@ -4,7 +4,7 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import { navItems } from "./nav-config"
-import { clearSession } from "@/lib/utils"
+import { logout } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 
 interface MobileSidebarProps {
@@ -109,7 +109,7 @@ export function MobileSidebar({ items = navItems }: MobileSidebarProps) {
                     <div className="p-4 border-t border-border/50">
                         <button
                             onClick={() => {
-                                clearSession(true)
+                                logout()
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/5 transition-colors"
                         >

@@ -38,6 +38,17 @@ func main() {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 
+	// Boot stays read-only by default (finding P2.3): the versioned
+	// migrations are applied out-of-band by `go run ./cmd/migrate` before the
+	// server starts, so a fresh instance can never silently mutate DDL.
+	// DB_MIGRATE_ON_BOOT re-enables the boot-time runner for the integration
+	// test harness (and any deployment that wants boot-time bootstrap).
+	if cfg.MigrateOnBoot {
+		if err := database.Migrate(ctx, db); err != nil {
+			log.Fatalf("migrate on boot: %v", err)
+		}
+	}
+
 	mail := email.New(cfg)
 	r := hands.BuildRouter(db, cfg, mail)
 

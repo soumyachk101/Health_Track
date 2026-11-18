@@ -8,6 +8,8 @@ import (
 	"healthtrack/internal/config"
 	"healthtrack/internal/database"
 	"healthtrack/internal/middleware"
+	"healthtrack/internal/modules/auth"
+	"healthtrack/internal/platform/queue"
 	"healthtrack/internal/services/email"
 )
 
@@ -20,7 +22,14 @@ func BuildRouter(db *database.DB, cfg *config.Config, mail *email.Service) *gin.
 	middleware.InitFromConfig(cfg)
 	r.Use(middleware.RecoverAndLog(), middleware.StripTrailingSlash(), middleware.NewCORS(cfg), middleware.MaxBodySize(1<<20), middleware.SecurityHeaders(), middleware.RequestLogger())
 
-	r.Static("/uploads", "./uploads")
+	// ADR-0002 queue producer: configured when REDIS_URL is set, a no-op
+	// degrade otherwise (legacy SMTP call sites keep their sync fallback).
+	prod := queue.NewProducer(db, cfg.RedisURL)
+
+	// The public /uploads static mount is REMOVED (ADR-0002, contract step):
+	// patient documents now live in private R2 and are served only through
+	// ownership/consent-gated pre-signed GET URLs (GET /api/v1/files/:id/
+	// download-url). No filesystem write path remains for uploads.
 
 	r.GET("/api/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -31,16 +40,34 @@ func BuildRouter(db *database.DB, cfg *config.Config, mail *email.Service) *gin.
 	})
 
 	authAPI := r.Group("/accounts/api")
-	AuthRouter(authAPI, db, cfg, mail)
+	AuthRouter(authAPI, db, cfg, mail, prod)
 
 	coreAPI := r.Group("/api")
 	CoreRouter(coreAPI, db, cfg)
 
+	// Pure Go auth module (ADR-0001): one shared service backs both the
+	// /api/v1/auth cookie routes and the chatbot's AuthRequired + AI-quota
+	// gate, so revocation and spend limits hold across the two surfaces.
+	authSvc, authV1Router := BuildAuthModule(db, cfg)
+
 	chatAPI := r.Group("/chatbot")
-	ChatbotRouter(chatAPI, cfg)
+	ChatbotRouter(chatAPI, cfg, authSvc)
 
 	adminAPI := r.Group("/admin-panel/api")
 	AdminRouter(adminAPI, db, cfg)
+
+	// ADR-0002: private R2 files + background-job status. CLI 1 mounts
+	// /api/v1/auth/* on the same group prefix; the two mounts never clash
+	// (disjoint sub-paths, different files).
+	v1 := r.Group("/api/v1")
+	FilesRouter(v1, db, cfg)
+	JobsRouter(v1, db, cfg)
+	// ADR-0001: the new cookie session system, additive + flag-gated. The
+	// legacy /accounts/api + Bearer HS256 paths above stay alive unchanged
+	// for the cutover window (rollout step 1; rollback = AUTH_COOKIE_ENABLED=false).
+	if cfg.AuthCookieEnabled {
+		authV1Router.Register(v1.Group("/auth"))
+	}
 
 	r.NoRoute(func(c *gin.Context) {
 		// Unknown paths are 404, not 200: the legacy server mirrored this, but
@@ -52,12 +79,12 @@ func BuildRouter(db *database.DB, cfg *config.Config, mail *email.Service) *gin.
 }
 
 // AuthRouter registers the /accounts/api auth routes.
-func AuthRouter(g gin.IRouter, db *database.DB, cfg *config.Config, mail *email.Service) {
+func AuthRouter(g gin.IRouter, db *database.DB, cfg *config.Config, mail *email.Service, prod *queue.Producer) {
 	g.POST("/login", authLogin(db, cfg))
-	g.POST("/register", authRegister(db, cfg, mail))
+	g.POST("/register", authRegister(db, cfg, mail, prod))
 	g.POST("/verify-otp", authVerifyOtp(db, cfg))
-	g.POST("/resend-otp", authResendOtp(db, cfg, mail))
-	g.POST("/forgot-password", authForgotPassword(db, cfg, mail))
+	g.POST("/resend-otp", authResendOtp(db, cfg, mail, prod))
+	g.POST("/forgot-password", authForgotPassword(db, cfg, mail, prod))
 	g.POST("/reset-password", authResetPassword(db, cfg))
 	g.POST("/google-login", authGoogleLogin(db, cfg))
 	// Supabase onboarding: capture role/provider fields server-side after a
@@ -99,8 +126,11 @@ func AdminRouter(g gin.IRouter, db *database.DB, cfg *config.Config) {
 	g.POST("/users/:user_id/action", admin, adminUserAction(db))
 }
 
-// ChatbotRouter registers the /chatbot routes.
-func ChatbotRouter(g gin.IRouter, cfg *config.Config) {
-	g.POST("/api", chatbotAPI(cfg))
-	g.POST("/api/tts", chatbotTTS(cfg))
+// ChatbotRouter registers the /chatbot routes. Both run behind the auth
+// module's AuthRequired + a per-user AI quota (finding S3), so AI spend is
+// bounded per account and anonymous callers can't reach the provider.
+func ChatbotRouter(g gin.IRouter, cfg *config.Config, authSvc *auth.Service) {
+	gate := authSvc.AuthRequired()
+	g.POST("/api", gate, chatbotAPI(cfg, authSvc))
+	g.POST("/api/tts", gate, chatbotTTS(cfg, authSvc))
 }
